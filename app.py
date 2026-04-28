@@ -86,6 +86,7 @@ def fetch_stock(ticker: str, period: str = "6mo") -> pd.DataFrame:
         return pd.DataFrame()
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
+    df = df.loc[:, ~df.columns.duplicated()]
     df = df[["Open", "High", "Low", "Close", "Volume"]].reset_index()
     date_col = next((c for c in df.columns if c.lower() in {"date", "datetime"}), None)
     if date_col and date_col != "Date":
