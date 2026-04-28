@@ -76,6 +76,7 @@ def download_data(tickers: list, period: str = "5y") -> pd.DataFrame:
     for ticker in tickers:
         df = yf.download(ticker, period=period, progress=False)
         if df.empty:
+            print(f"{ticker} has no data, skipped")
             continue
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
@@ -83,9 +84,11 @@ def download_data(tickers: list, period: str = "5y") -> pd.DataFrame:
         df["Ticker"] = ticker
         df = df.sort_values("Date")
         all_data.append(df)
-    if not all_data:
+    if len(all_data) == 0:
         return pd.DataFrame()
-    return pd.concat(all_data, ignore_index=True).dropna()
+
+    df_all = pd.concat(all_data, ignore_index=True)
+    return df_all
 
 
 @st.cache_resource(show_spinner="Training models… this may take a minute…")
