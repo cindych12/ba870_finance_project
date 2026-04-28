@@ -5,16 +5,6 @@ import numpy as np
 import pickle
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
-
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
-from sklearn.pipeline import Pipeline
-from sklearn.compose import ColumnTransformer
-from sklearn.preprocessing import StandardScaler
-from sklearn.impute import SimpleImputer
-from sklearn.linear_model import LogisticRegression
-from sklearn.ensemble import RandomForestClassifier
-
 # ─────────────────────────────────────────
 # Page Config
 # ─────────────────────────────────────────
