@@ -1,26 +1,38 @@
+# ================================================================
+# app.py  —  Stock Investment Decision Support
+# Loads model.pkl (trained offline), fetches live data via yfinance,
+# computes features, and shows Buy / Hold / Sell recommendation.
+# ================================================================
+
+import pickle
 import streamlit as st
 import yfinance as yf
 import pandas as pd
 import numpy as np
-import pickle
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 
-# ─────────────────────────────────────────
-# Page Config
-# ─────────────────────────────────────────
+# ── Page config ──────────────────────────────────────────────────
 st.set_page_config(
     page_title="Stock Investment Decision Support",
     page_icon="📈",
     layout="wide",
 )
 
-st.title("📈 Stock Investment Decision Support App")
-st.markdown("Get **Buy / Hold / Sell** recommendations powered by machine learning and technical indicators.")
+# ── Constants ────────────────────────────────────────────────────
+FEATURE_COLS = [
+    "Return_1d", "Return_5d",
+    "MA_5", "MA_20", "MA_ratio", "MA_diff", "Price_vs_MA20",
+    "Volatility_5", "Volume_MA5", "Volume_Ratio",
+    "Momentum_3", "Momentum_10", "Momentum_20",
+    "HL_Range", "Volatility_10", "Breakout_20", "Drawdown_20",
+    "Volume_Spike",
+]
 
-# ─────────────────────────────────────────
-# Constants
-# ─────────────────────────────────────────
+SIGNAL_LABEL = { 1: "BUY",  0: "HOLD", -1: "SELL" }
+SIGNAL_EMOJI = { 1: "🟢",   0: "🟡",    -1: "🔴"  }
+SIGNAL_COLOR = { 1: "#22c55e", 0: "#eab308", -1: "#ef4444" }
+
 DEFAULT_TICKERS = [
     "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA",
     "TSLA", "JPM", "JNJ", "XOM", "WMT",
@@ -29,348 +41,225 @@ DEFAULT_TICKERS = [
     "SPY", "QQQ",
 ]
 
-FEATURE_COLS = [
-    "Return_1d", "Return_5d",
-    "MA_5", "MA_20", "MA_ratio", "MA_diff", "Price_vs_MA20",
-    "Volatility_5", "Volatility_10",
-    "Volume_MA5", "Volume_Ratio", "Volume_Spike",
-    "Momentum_3", "Momentum_10", "Momentum_20",
-    "HL_Range", "Breakout_20", "Drawdown_20",
-]
+# ── Load model ───────────────────────────────────────────────────
+@st.cache_resource
+def load_model():
+    try:
+        with open("model.pkl", "rb") as f:
+            return pickle.load(f)
+    except FileNotFoundError:
+        return None
 
-SIGNAL_MAP = {1: "🟢 BUY", 0: "🟡 HOLD", -1: "🔴 SELL"}
-SIGNAL_COLOR = {1: "#22c55e", 0: "#eab308", -1: "#ef4444"}
+model = load_model()
 
-# ─────────────────────────────────────────
-# Helper Functions
-# ─────────────────────────────────────────
-def add_features(group: pd.DataFrame) -> pd.DataFrame:
-    group = group.sort_values("Date").copy()
-    group["Return_1d"]    = group["Close"].pct_change()
-    group["Return_5d"]    = group["Close"].pct_change(5)
-    group["MA_5"]         = group["Close"].rolling(5).mean()
-    group["MA_20"]        = group["Close"].rolling(20).mean()
-    group["MA_ratio"]     = group["MA_5"] / group["MA_20"]
-    group["MA_diff"]      = group["MA_5"] - group["MA_20"]
-    group["Price_vs_MA20"]= group["Close"] / group["MA_20"]
-    group["Volatility_5"] = group["Return_1d"].rolling(5).std()
-    group["Volatility_10"]= group["Return_1d"].rolling(10).std()
-    group["Volume_MA5"]   = group["Volume"].rolling(5).mean()
-    group["Volume_Ratio"] = group["Volume"] / group["Volume_MA5"]
-    group["Volume_MA20"]  = group["Volume"].rolling(20).mean()
-    group["Volume_Spike"] = group["Volume"] / group["Volume_MA20"]
-    group["Momentum_3"]   = group["Close"] / group["Close"].shift(3) - 1
-    group["Momentum_10"]  = group["Close"] / group["Close"].shift(10) - 1
-    group["Momentum_20"]  = group["Close"] / group["Close"].shift(20) - 1
-    group["HL_Range"]     = (group["High"] - group["Low"]) / group["Close"]
-    group["High_20"]      = group["High"].rolling(20).max()
-    group["Low_20"]       = group["Low"].rolling(20).min()
-    group["Breakout_20"]  = group["Close"] / group["High_20"]
-    group["Drawdown_20"]  = group["Close"] / group["Low_20"]
-    group["Future_Return_5d"] = group["Close"].shift(-5) / group["Close"] - 1
-    return group
+# ── Feature engineering (mirrors notebook exactly) ───────────────
+def compute_features(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.sort_values("Date").copy()
+    df["Return_1d"]     = df["Close"].pct_change()
+    df["Return_5d"]     = df["Close"].pct_change(5)
+    df["MA_5"]          = df["Close"].rolling(5).mean()
+    df["MA_20"]         = df["Close"].rolling(20).mean()
+    df["MA_ratio"]      = df["MA_5"] / df["MA_20"]
+    df["MA_diff"]       = df["MA_5"] - df["MA_20"]
+    df["Price_vs_MA20"] = df["Close"] / df["MA_20"]
+    df["Volatility_5"]  = df["Return_1d"].rolling(5).std()
+    df["Volatility_10"] = df["Return_1d"].rolling(10).std()
+    df["Volume_MA5"]    = df["Volume"].rolling(5).mean()
+    df["Volume_Ratio"]  = df["Volume"] / df["Volume_MA5"]
+    df["Volume_MA20"]   = df["Volume"].rolling(20).mean()
+    df["Volume_Spike"]  = df["Volume"] / df["Volume_MA20"]
+    df["Momentum_3"]    = df["Close"] / df["Close"].shift(3) - 1
+    df["Momentum_10"]   = df["Close"] / df["Close"].shift(10) - 1
+    df["Momentum_20"]   = df["Close"] / df["Close"].shift(20) - 1
+    df["HL_Range"]      = (df["High"] - df["Low"]) / df["Close"]
+    df["High_20"]       = df["High"].rolling(20).max()
+    df["Low_20"]        = df["Low"].rolling(20).min()
+    df["Breakout_20"]   = df["Close"] / df["High_20"]
+    df["Drawdown_20"]   = df["Close"] / df["Low_20"]
+    return df
 
-
-@st.cache_data(show_spinner="Downloading historical data…")
-def download_data(tickers: list, period: str = "5y") -> pd.DataFrame:
-    all_data = []
-    for ticker in tickers:
-        df = yf.download(ticker, period=period, progress=False, auto_adjust=True)
-        if df.empty:
-            continue
-
-        # Flatten MultiIndex columns (yfinance >= 0.2 returns them for single tickers too)
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = ["_".join([c for c in col if c]).strip("_") for col in df.columns]
-            # After flattening, cols may be like "Close_AAPL" — strip ticker suffix
-            df.columns = [c.split("_")[0] for c in df.columns]
-
-        # Normalize column names (yfinance sometimes lowercases)
-        df.columns = [c.capitalize() if c.lower() in {"open","high","low","close","volume","adj close"} else c for c in df.columns]
-
-        # Make sure the date is a plain column named "Date"
-        df = df.reset_index()
-        # The index col after reset could be "Date", "Datetime", "index", or "Timestamp"
-        date_col = next(
-            (c for c in df.columns if c.lower() in {"date", "datetime", "timestamp"}),
-            None
-        )
-        if date_col is None:
-            continue  # can't identify date, skip
-        if date_col != "Date":
-            df = df.rename(columns={date_col: "Date"})
-
-        # Keep only the columns we need
-        needed = ["Date", "Open", "High", "Low", "Close", "Volume"]
-        missing = [c for c in needed if c not in df.columns]
-        if missing:
-            continue
-
-        df = df[needed].copy()
-        # Strip timezone info so comparisons work
-        df["Date"] = pd.to_datetime(df["Date"]).dt.tz_localize(None)
-        df["Ticker"] = ticker
-        df = df.sort_values("Date").reset_index(drop=True)
-        all_data.append(df)
-
-    if not all_data:
+# ── Data download ────────────────────────────────────────────────
+@st.cache_data(show_spinner=False, ttl=3600)
+def fetch_stock(ticker: str, period: str = "6mo") -> pd.DataFrame:
+    df = yf.download(ticker, period=period, progress=False, auto_adjust=True)
+    if df.empty:
         return pd.DataFrame()
-    combined = pd.concat(all_data, ignore_index=True)
-    combined = combined.dropna(subset=["Open", "High", "Low", "Close", "Volume"])
-    return combined
-
-
-@st.cache_resource(show_spinner="Training models… this may take a minute…")
-def train_models(tickers_key: str, period: str):
-    tickers = tickers_key.split(",")
-    raw_df  = download_data(tickers, period)
-    if raw_df.empty:
-        return None, None, None, None, None
-
-    df = raw_df.groupby("Ticker", group_keys=False).apply(add_features)
-    df = df.dropna().reset_index(drop=True)
-
-    # Ensure Date is tz-naive after groupby
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+    df = df[["Open", "High", "Low", "Close", "Volume"]].reset_index()
+    date_col = next((c for c in df.columns if c.lower() in {"date", "datetime"}), None)
+    if date_col and date_col != "Date":
+        df = df.rename(columns={date_col: "Date"})
     df["Date"] = pd.to_datetime(df["Date"]).dt.tz_localize(None)
+    return df.sort_values("Date").reset_index(drop=True)
 
-    df_model = df.dropna(subset=FEATURE_COLS + ["Future_Return_5d"]).copy()
-    df_model  = df_model.sort_values(["Date", "Ticker"]).reset_index(drop=True)
+# ── Predict for one ticker ───────────────────────────────────────
+def predict_ticker(ticker: str):
+    """Returns (signal_int, latest_row_series, full_df_with_features)"""
+    raw = fetch_stock(ticker, period="6mo")
+    if raw.empty or len(raw) < 25:
+        return None, None, None
+    df = compute_features(raw)
+    latest = df.dropna(subset=FEATURE_COLS).iloc[-1]
+    X = latest[FEATURE_COLS].values.reshape(1, -1)
+    signal = int(model.predict(X)[0])
+    return signal, latest, df
 
-    # Compute cutoff via integer timestamps (avoids datetime quantile issues in pandas)
-    date_ns   = df_model["Date"].astype(np.int64)
-    cutoff_date = pd.Timestamp(int(date_ns.quantile(0.8)))
-    train_df    = df_model[df_model["Date"] < cutoff_date].copy()
-    test_df     = df_model[df_model["Date"] >= cutoff_date].copy()
+# ════════════════════════════════════════════════════════════════
+# UI
+# ════════════════════════════════════════════════════════════════
 
-    buy_cutoff  = train_df["Future_Return_5d"].quantile(0.7)
-    sell_cutoff = train_df["Future_Return_5d"].quantile(0.3)
+st.title("📈 Stock Investment Decision Support")
+st.markdown("Loads a pre-trained Random Forest → fetches latest market data → gives **Buy / Hold / Sell** signal.")
 
-    def label_signal(x):
-        if x > buy_cutoff and x > 0:   return  1
-        if x < sell_cutoff and x < 0:  return -1
-        return 0
-
-    train_df["Signal"] = train_df["Future_Return_5d"].apply(label_signal)
-    test_df["Signal"]  = test_df["Future_Return_5d"].apply(label_signal)
-
-    X_train, y_train = train_df[FEATURE_COLS], train_df["Signal"]
-    X_test,  y_test  = test_df[FEATURE_COLS],  test_df["Signal"]
-
-    # Logistic Regression
-    numeric_transformer = Pipeline([
-        ("imputer", SimpleImputer(strategy="median")),
-        ("scaler",  StandardScaler()),
-    ])
-    preprocessor = ColumnTransformer([("num", numeric_transformer, FEATURE_COLS)], remainder="drop")
-    log_model = Pipeline([
-        ("preprocessor", preprocessor),
-        ("classifier",   LogisticRegression(solver="lbfgs", max_iter=1000, C=0.8, class_weight="balanced")),
-    ])
-    log_model.fit(X_train, y_train)
-
-    # Random Forest
-    rf_model = RandomForestClassifier(
-        n_estimators=200, max_depth=8,
-        min_samples_split=10, min_samples_leaf=5,
-        random_state=42, class_weight="balanced",
+# ── Model status banner ──────────────────────────────────────────
+if model is None:
+    st.error(
+        "⚠️ `model.pkl` not found. "
+        "Please run `python train_model.py` first, then restart the app."
     )
-    rf_model.fit(X_train, y_train)
+    st.stop()
+else:
+    st.success("✅ Model loaded from `model.pkl`")
 
-    return log_model, rf_model, X_test, y_test, df_model
-
-
-# ─────────────────────────────────────────
-# Sidebar — Settings
-# ─────────────────────────────────────────
+# ── Sidebar ──────────────────────────────────────────────────────
 with st.sidebar:
     st.header("⚙️ Settings")
-    period = st.selectbox("Historical Period", ["2y", "3y", "5y"], index=2)
-    custom_input = st.text_input(
-        "Add custom tickers (comma-separated)",
-        placeholder="e.g. NFLX, UBER",
-    )
-    extra = [t.strip().upper() for t in custom_input.split(",") if t.strip()]
-    all_tickers = list(dict.fromkeys(DEFAULT_TICKERS + extra))  # dedup, preserve order
+    custom_raw = st.text_input("Add custom tickers (comma-separated)", placeholder="e.g. NFLX, UBER")
+    extra = [t.strip().upper() for t in custom_raw.split(",") if t.strip()]
+    all_tickers = list(dict.fromkeys(DEFAULT_TICKERS + extra))
 
-    selected_tickers = st.multiselect(
-        "Stocks to include in training",
+    selected = st.multiselect(
+        "Stocks to analyse",
         options=all_tickers,
-        default=DEFAULT_TICKERS,
+        default=["AAPL", "MSFT", "NVDA", "TSLA", "AMZN"],
     )
-    model_choice = st.radio("Model", ["Random Forest", "Logistic Regression"])
-    train_btn    = st.button("🚀 Train / Refresh Model", type="primary")
+    run_btn = st.button("🔍 Get Recommendations", type="primary")
 
-# ─────────────────────────────────────────
-# Main Tabs
-# ─────────────────────────────────────────
-tab_pred, tab_perf, tab_fi, tab_chart = st.tabs([
-    "🔮 Predictions", "📊 Model Performance", "📌 Feature Importance", "📉 Price Chart"
-])
+# ── Tabs ─────────────────────────────────────────────────────────
+tab_rec, tab_detail, tab_chart = st.tabs(
+    ["🔮 Recommendations", "🔍 Single Stock Detail", "📉 Price Chart"]
+)
 
-# ─────────────────────────────────────────
-# Train
-# ─────────────────────────────────────────
-if not selected_tickers:
-    st.warning("Please select at least one ticker in the sidebar.")
-    st.stop()
+# ════════════════════════════════════════════════════════════════
+# Tab 1 — Recommendations (batch)
+# ════════════════════════════════════════════════════════════════
+with tab_rec:
+    if not selected:
+        st.info("Select stocks in the sidebar and click **Get Recommendations**.")
+    elif run_btn or "results" not in st.session_state:
+        if not selected:
+            st.stop()
+        results = []
+        progress = st.progress(0, text="Fetching data…")
+        for i, ticker in enumerate(selected):
+            progress.progress((i + 1) / len(selected), text=f"Processing {ticker}…")
+            signal, latest, _ = predict_ticker(ticker)
+            if signal is None:
+                results.append({"Ticker": ticker, "Close ($)": "—", "Signal": "⚠️ No data"})
+                continue
+            results.append({
+                "Ticker":    ticker,
+                "Close ($)": round(float(latest["Close"]), 2),
+                "Signal":    f"{SIGNAL_EMOJI[signal]} {SIGNAL_LABEL[signal]}",
+                "_sig":      signal,
+            })
+        progress.empty()
+        st.session_state["results"] = results
+        st.session_state["selected"] = selected
 
-tickers_key = ",".join(sorted(selected_tickers))
-log_model, rf_model, X_test, y_test, df_model = train_models(tickers_key, period)
+    if "results" in st.session_state:
+        res = st.session_state["results"]
+        valid = [r for r in res if "_sig" in r]
 
-if log_model is None:
-    st.error("Failed to download data. Check ticker symbols and try again.")
-    st.stop()
+        # Summary cards
+        c1, c2, c3 = st.columns(3)
+        c1.metric("🟢 BUY",  sum(1 for r in valid if r["_sig"] ==  1))
+        c2.metric("🟡 HOLD", sum(1 for r in valid if r["_sig"] ==  0))
+        c3.metric("🔴 SELL", sum(1 for r in valid if r["_sig"] == -1))
 
-active_model = rf_model if model_choice == "Random Forest" else log_model
+        st.markdown("---")
 
-# ─────────────────────────────────────────
-# Tab 1: Predictions
-# ─────────────────────────────────────────
-with tab_pred:
-    st.subheader("Latest Signal for Each Stock")
+        display = pd.DataFrame([{k: v for k, v in r.items() if k != "_sig"} for r in res])
+        st.dataframe(display, use_container_width=True, hide_index=True)
 
-    latest_rows = (
-        df_model.sort_values("Date")
-        .groupby("Ticker")
-        .tail(1)
-        .copy()
-    )
-    latest_rows["RF_Prediction"]       = rf_model.predict(latest_rows[FEATURE_COLS])
-    latest_rows["Logistic_Prediction"] = log_model.predict(latest_rows[FEATURE_COLS])
+# ════════════════════════════════════════════════════════════════
+# Tab 2 — Single Stock Detail
+# ════════════════════════════════════════════════════════════════
+with tab_detail:
+    pick = st.selectbox("Choose a stock", options=selected if selected else DEFAULT_TICKERS[:5])
 
-    pred_col = "RF_Prediction" if model_choice == "Random Forest" else "Logistic_Prediction"
-    display  = latest_rows[["Date", "Ticker", "Close", pred_col]].copy()
-    display["Signal"] = display[pred_col].map(SIGNAL_MAP)
-    display["Close"]  = display["Close"].round(2)
-    display = display.rename(columns={"Close": "Latest Close ($)", pred_col: "_num"})
-    display = display[["Date", "Ticker", "Latest Close ($)", "Signal"]]
+    if st.button("Analyse", key="analyse_btn"):
+        with st.spinner(f"Fetching {pick}…"):
+            signal, latest, df_feat = predict_ticker(pick)
 
-    # Summary cards
-    buy_count  = (latest_rows[pred_col] ==  1).sum()
-    hold_count = (latest_rows[pred_col] ==  0).sum()
-    sell_count = (latest_rows[pred_col] == -1).sum()
-    c1, c2, c3 = st.columns(3)
-    c1.metric("🟢 BUY",  buy_count)
-    c2.metric("🟡 HOLD", hold_count)
-    c3.metric("🔴 SELL", sell_count)
-
-    st.dataframe(display.reset_index(drop=True), use_container_width=True, height=420)
-
-    # Single-stock deep dive
-    st.markdown("---")
-    st.subheader("🔍 Single Stock Detail")
-    pick = st.selectbox("Choose a stock", options=sorted(latest_rows["Ticker"].tolist()))
-    row  = latest_rows[latest_rows["Ticker"] == pick].iloc[0]
-    sig_num = int(row[pred_col])
-    sig_label = SIGNAL_MAP[sig_num]
-    sig_color = SIGNAL_COLOR[sig_num]
-
-    st.markdown(
-        f"<h2 style='color:{sig_color};text-align:center'>{pick}: {sig_label}</h2>",
-        unsafe_allow_html=True,
-    )
-
-    feat_df = pd.DataFrame({
-        "Feature": FEATURE_COLS,
-        "Value":   [round(float(row[f]), 5) for f in FEATURE_COLS],
-    })
-    st.dataframe(feat_df, use_container_width=True, height=300)
-
-# ─────────────────────────────────────────
-# Tab 2: Model Performance
-# ─────────────────────────────────────────
-with tab_perf:
-    st.subheader(f"Test-Set Performance — {model_choice}")
-
-    y_pred = active_model.predict(X_test)
-    acc    = accuracy_score(y_test, y_pred)
-    report = classification_report(
-        y_test, y_pred,
-        labels=[-1, 0, 1],
-        target_names=["Sell", "Hold", "Buy"],
-        output_dict=True,
-    )
-
-    st.metric("Overall Accuracy", f"{acc:.2%}")
-
-    report_df = pd.DataFrame(report).T.round(3)
-    st.dataframe(report_df, use_container_width=True)
-
-    # Confusion matrix
-    cm = confusion_matrix(y_test, y_pred, labels=[-1, 0, 1])
-    fig, ax = plt.subplots(figsize=(5, 4))
-    im = ax.imshow(cm, cmap="Blues")
-    ax.set_xticks([0,1,2]); ax.set_yticks([0,1,2])
-    ax.set_xticklabels(["Sell","Hold","Buy"])
-    ax.set_yticklabels(["Sell","Hold","Buy"])
-    ax.set_xlabel("Predicted"); ax.set_ylabel("Actual")
-    ax.set_title("Confusion Matrix")
-    for i in range(3):
-        for j in range(3):
-            ax.text(j, i, cm[i, j], ha="center", va="center", color="black")
-    fig.colorbar(im)
-    fig.tight_layout()
-    st.pyplot(fig)
-    plt.close(fig)
-
-# ─────────────────────────────────────────
-# Tab 3: Feature Importance (RF only)
-# ─────────────────────────────────────────
-with tab_fi:
-    st.subheader("Feature Importance — Random Forest")
-    fi_df = pd.DataFrame({
-        "Feature":    FEATURE_COLS,
-        "Importance": rf_model.feature_importances_,
-    }).sort_values("Importance", ascending=False).reset_index(drop=True)
-
-    fig2, ax2 = plt.subplots(figsize=(7, 5))
-    colors = plt.cm.RdYlGn(np.linspace(0.3, 0.9, len(fi_df)))
-    ax2.barh(fi_df["Feature"], fi_df["Importance"], color=colors)
-    ax2.invert_yaxis()
-    ax2.set_xlabel("Importance")
-    ax2.set_title("Random Forest Feature Importance")
-    fig2.tight_layout()
-    st.pyplot(fig2)
-    plt.close(fig2)
-
-    st.dataframe(fi_df, use_container_width=True)
-
-# ─────────────────────────────────────────
-# Tab 4: Price Chart with MA
-# ─────────────────────────────────────────
-with tab_chart:
-    st.subheader("📉 Price Chart with Moving Averages")
-    chart_ticker = st.selectbox("Select ticker", options=sorted(selected_tickers), key="chart_ticker")
-    days_back    = st.slider("Days to display", 60, 365, 180)
-
-    stock_df = df_model[df_model["Ticker"] == chart_ticker].sort_values("Date").tail(days_back).copy()
-
-    if stock_df.empty:
-        st.warning("No data available for this ticker.")
-    else:
-        fig3, ax3 = plt.subplots(figsize=(10, 4))
-        ax3.plot(stock_df["Date"], stock_df["Close"], label="Close",   color="#3b82f6", linewidth=1.5)
-        ax3.plot(stock_df["Date"], stock_df["MA_5"],  label="MA 5",    color="#f97316", linewidth=1,   linestyle="--")
-        ax3.plot(stock_df["Date"], stock_df["MA_20"], label="MA 20",   color="#a855f7", linewidth=1,   linestyle="--")
-        ax3.xaxis.set_major_formatter(mdates.DateFormatter("%b %Y"))
-        ax3.xaxis.set_major_locator(mdates.MonthLocator(interval=2))
-        plt.xticks(rotation=30)
-        ax3.set_title(f"{chart_ticker} — Close Price & Moving Averages")
-        ax3.set_ylabel("Price ($)")
-        ax3.legend()
-        ax3.grid(alpha=0.3)
-        fig3.tight_layout()
-        st.pyplot(fig3)
-        plt.close(fig3)
-
-        # Overlay buy/sell signals on chart
-        st.markdown("#### Signal overlay (last predictions)")
-        pred_col_chart = "RF_Prediction" if model_choice == "Random Forest" else "Logistic_Prediction"
-        latest_signal  = latest_rows[latest_rows["Ticker"] == chart_ticker]
-        if not latest_signal.empty:
-            sig = int(latest_signal[pred_col_chart].values[0])
+        if signal is None:
+            st.error(f"Could not fetch data for **{pick}**. Check the ticker symbol.")
+        else:
+            color = SIGNAL_COLOR[signal]
+            label = SIGNAL_LABEL[signal]
+            emoji = SIGNAL_EMOJI[signal]
             st.markdown(
-                f"**Latest {model_choice} signal for {chart_ticker}:** "
-                f"<span style='color:{SIGNAL_COLOR[sig]};font-weight:bold'>{SIGNAL_MAP[sig]}</span>",
+                f"<div style='text-align:center;padding:20px;border-radius:12px;"
+                f"background:{color}22;border:2px solid {color}'>"
+                f"<span style='font-size:3rem'>{emoji}</span><br>"
+                f"<span style='font-size:2rem;font-weight:700;color:{color}'>{pick}: {label}</span>"
+                f"</div>",
                 unsafe_allow_html=True,
             )
+            st.markdown("")
+
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("Latest Close",     f"${latest['Close']:.2f}")
+            m2.metric("1-Day Return",     f"{latest['Return_1d']*100:.2f}%")
+            m3.metric("5-Day Return",     f"{latest['Return_5d']*100:.2f}%")
+            m4.metric("MA Ratio (5/20)",  f"{latest['MA_ratio']:.4f}")
+
+            st.markdown("#### Feature Values Used for Prediction")
+            feat_df = pd.DataFrame({
+                "Feature": FEATURE_COLS,
+                "Value":   [round(float(latest[f]), 6) for f in FEATURE_COLS],
+            })
+            st.dataframe(feat_df, use_container_width=True, hide_index=True, height=320)
+
+# ════════════════════════════════════════════════════════════════
+# Tab 3 — Price Chart
+# ════════════════════════════════════════════════════════════════
+with tab_chart:
+    chart_ticker = st.selectbox(
+        "Select stock", options=selected if selected else DEFAULT_TICKERS[:5], key="chart_sel"
+    )
+    days = st.slider("Days to display", 30, 180, 90)
+
+    if st.button("Show Chart", key="chart_btn"):
+        with st.spinner(f"Loading {chart_ticker}…"):
+            sig, latest, df_feat = predict_ticker(chart_ticker)
+
+        if df_feat is None:
+            st.error(f"Could not fetch data for **{chart_ticker}**.")
+        else:
+            df_plot = df_feat.dropna(subset=["MA_5", "MA_20"]).tail(days)
+
+            fig, ax = plt.subplots(figsize=(10, 4))
+            ax.plot(df_plot["Date"], df_plot["Close"], label="Close", color="#3b82f6", linewidth=1.8)
+            ax.plot(df_plot["Date"], df_plot["MA_5"],  label="MA 5",  color="#f97316", linewidth=1.2, linestyle="--")
+            ax.plot(df_plot["Date"], df_plot["MA_20"], label="MA 20", color="#a855f7", linewidth=1.2, linestyle="--")
+            ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %d"))
+            ax.xaxis.set_major_locator(mdates.WeekdayLocator(interval=2))
+            plt.xticks(rotation=30, ha="right")
+            ax.set_title(f"{chart_ticker} — Close Price & Moving Averages (last {days} days)")
+            ax.set_ylabel("Price (USD)")
+            ax.legend()
+            ax.grid(alpha=0.25)
+            fig.tight_layout()
+            st.pyplot(fig)
+            plt.close(fig)
+
+            if sig is not None:
+                color = SIGNAL_COLOR[sig]
+                st.markdown(
+                    f"**Current signal:** "
+                    f"<span style='color:{color};font-size:1.2rem;font-weight:bold'>"
+                    f"{SIGNAL_EMOJI[sig]} {SIGNAL_LABEL[sig]}</span>",
+                    unsafe_allow_html=True,
+                )
