@@ -116,8 +116,8 @@ st.markdown("Loads a pre-trained Random Forest → fetches latest market data �
 # ── Model status banner ──────────────────────────────────────────
 if model is None:
     st.error(
-        "⚠️ `model.pkl` not found. "
-        "Please run `python train_model.py` first, then restart the app."
+        "⚠️ model.pkl not found. "
+        "Please run python train_model.py first, then restart the app."
     )
     st.stop()
 else:
@@ -240,27 +240,3 @@ with tab_chart:
             st.error(f"Could not fetch data for **{chart_ticker}**.")
         else:
             df_plot = df_feat.dropna(subset=["MA_5", "MA_20"]).tail(days)
-
-            fig, ax = plt.subplots(figsize=(10, 4))
-            ax.plot(df_plot["Date"], df_plot["Close"], label="Close", color="#3b82f6", linewidth=1.8)
-            ax.plot(df_plot["Date"], df_plot["MA_5"],  label="MA 5",  color="#f97316", linewidth=1.2, linestyle="--")
-            ax.plot(df_plot["Date"], df_plot["MA_20"], label="MA 20", color="#a855f7", linewidth=1.2, linestyle="--")
-            ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %d"))
-            ax.xaxis.set_major_locator(mdates.WeekdayLocator(interval=2))
-            plt.xticks(rotation=30, ha="right")
-            ax.set_title(f"{chart_ticker} — Close Price & Moving Averages (last {days} days)")
-            ax.set_ylabel("Price (USD)")
-            ax.legend()
-            ax.grid(alpha=0.25)
-            fig.tight_layout()
-            st.pyplot(fig)
-            plt.close(fig)
-
-            if sig is not None:
-                color = SIGNAL_COLOR[sig]
-                st.markdown(
-                    f"**Current signal:** "
-                    f"<span style='color:{color};font-size:1.2rem;font-weight:bold'>"
-                    f"{SIGNAL_EMOJI[sig]} {SIGNAL_LABEL[sig]}</span>",
-                    unsafe_allow_html=True,
-                )
