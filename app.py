@@ -16,7 +16,7 @@ st.set_page_config(
     layout="wide",
 )
 
-# ── Global CSS (light-theme, classmate style) ────────────────────
+# ── Global CSS ───────────────────────────────────────────────────
 st.markdown("""
 <style>
 .signal-card {
@@ -26,46 +26,22 @@ st.markdown("""
     margin: 8px 0;
     border-left: 4px solid #94a3b8;
 }
-.signal-card .card-title {
-    font-weight: 700;
-    font-size: 15px;
-    color: #1a1a1a;
-    margin-bottom: 4px;
-}
-.signal-card .card-detail {
-    font-size: 13px;
-    color: #444;
-    line-height: 1.5;
-}
-.info-box {
-    background: #eff6ff;
-    border-left: 4px solid #3b82f6;
-    border-radius: 6px;
-    padding: 12px 16px;
-    margin: 8px 0 16px 0;
-    color: #1e3a5f;
-    font-size: 0.88rem;
-}
-.info-box b { color: #1d4ed8; }
+.signal-card .card-title { font-weight:700; font-size:15px; color:#1a1a1a; margin-bottom:4px; }
+.signal-card .card-detail { font-size:13px; color:#444; line-height:1.5; }
+.info-box { background:#eff6ff; border-left:4px solid #3b82f6; border-radius:6px; padding:12px 16px; margin:8px 0 16px 0; color:#1e3a5f; font-size:0.88rem; }
+.info-box b { color:#1d4ed8; }
 .signal-plain-buy  { background:#f0fdf4; border-left:4px solid #22c55e; border-radius:6px; padding:14px 18px; margin:12px 0; color:#14532d; }
 .signal-plain-hold { background:#fefce8; border-left:4px solid #eab308; border-radius:6px; padding:14px 18px; margin:12px 0; color:#713f12; }
 .signal-plain-sell { background:#fef2f2; border-left:4px solid #ef4444;  border-radius:6px; padding:14px 18px; margin:12px 0; color:#7f1d1d; }
-.home-section {
-    background: #f8fafc;
-    border-radius: 12px;
-    padding: 24px 28px;
-    margin-bottom: 16px;
-    border: 1px solid #e2e8f0;
-}
-.home-section h3 { margin-top: 0; }
-.method-block {
-    border-left: 4px solid #3b82f6;
-    padding-left: 14px;
-    margin: 12px 0;
-}
-.method-block.green { border-color: #22c55e; }
+.home-section { background:#f8fafc; border-radius:12px; padding:24px 28px; margin-bottom:16px; border:1px solid #e2e8f0; }
+.home-section h3 { margin-top:0; }
+.method-block { border-left:4px solid #3b82f6; padding-left:14px; margin:12px 0; }
+.method-block.green { border-color:#22c55e; }
+.disclaimer { font-size:0.78rem; color:#94a3b8; margin-top:10px; font-style:italic; }
 </style>
 """, unsafe_allow_html=True)
+
+DISCLAIMER = "*⚠️ This tool provides financial information for educational purposes. While the signals may be used as a reference, please exercise caution and conduct your own research. Past signals do not guarantee future returns.*"
 
 # ── Constants ────────────────────────────────────────────────────
 FEATURE_COLS = [
@@ -124,23 +100,24 @@ SIGNAL_PLAIN = {
     ),
 }
 
-# Chart display periods
 DISPLAY_PERIODS = ["1wk", "1mo", "3mo", "6mo", "1y"]
 DISPLAY_PERIOD_LABEL = {
-    "1wk": "1 Week",
-    "1mo": "1 Month",
-    "3mo": "3 Months",
-    "6mo": "6 Months",
-    "1y":  "1 Year",
+    "1wk": "1 Week", "1mo": "1 Month", "3mo": "3 Months",
+    "6mo": "6 Months", "1y": "1 Year",
 }
 DISPLAY_PERIOD_DAYS = {
     "1wk": 7, "1mo": 30, "3mo": 90, "6mo": 180, "1y": 365,
 }
 
-PERIODS = ["1mo", "3mo", "6mo", "1y"]
-PERIOD_LABEL = {"1mo": "1 Month", "3mo": "3 Months", "6mo": "6 Months", "1y": "1 Year"}
-
 MIN_FETCH_PERIOD = "6mo"
+
+# Training metadata — update if you retrain the model
+MODEL_TRAIN_INFO = {
+    "companies": 20,
+    "index":     "S&P 500",
+    "period":    "2021 – 2026 (current)",
+    "source":    "yFinance (daily OHLCV)",
+}
 
 DEFAULT_TICKERS = [
     "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA",
@@ -150,7 +127,6 @@ DEFAULT_TICKERS = [
     "SPY", "QQQ",
 ]
 
-# Company names for display
 COMPANY_NAMES = {
     "AAPL": "Apple Inc.", "MSFT": "Microsoft Corp.", "GOOGL": "Alphabet Inc.",
     "AMZN": "Amazon.com Inc.", "NVDA": "NVIDIA Corp.", "TSLA": "Tesla Inc.",
@@ -162,9 +138,9 @@ COMPANY_NAMES = {
     "QQQ": "Invesco QQQ Trust",
 }
 
+# ── Company name lookup (yFinance fallback) ──────────────────────
 @st.cache_data(show_spinner=False)
 def get_company_name(ticker: str) -> str:
-    """Lookup company name: local dict first, then yFinance."""
     if ticker in COMPANY_NAMES:
         return COMPANY_NAMES[ticker]
     try:
@@ -177,6 +153,27 @@ def ticker_label(t: str) -> str:
     name = get_company_name(t)
     return f"{t} — {name}" if name and name != t else t
 
+# ── yFinance ticker search by name ──────────────────────────────
+@st.cache_data(show_spinner=False)
+def search_ticker(query: str) -> list:
+    """Search yFinance for tickers matching a company name or ticker string.
+    Returns list of (ticker, name) tuples."""
+    try:
+        results = yf.Search(query, max_results=5).quotes
+        out = []
+        for r in results:
+            sym  = r.get("symbol", "")
+            name = r.get("longname") or r.get("shortname") or ""
+            if sym and name:
+                out.append((sym, name))
+        return out
+    except Exception:
+        # Fallback: treat input as direct ticker
+        name = get_company_name(query.upper())
+        if name != query.upper():
+            return [(query.upper(), name)]
+        return []
+
 # ── Load model ───────────────────────────────────────────────────
 @st.cache_resource
 def load_model():
@@ -186,7 +183,7 @@ def load_model():
     except FileNotFoundError:
         return None
 
-model = load_model()
+model          = load_model()
 HAS_PROBA      = model is not None and hasattr(model, "predict_proba")
 HAS_IMPORTANCE = model is not None and hasattr(model, "feature_importances_")
 
@@ -219,7 +216,6 @@ def compute_features(df: pd.DataFrame) -> pd.DataFrame:
 # ── Data download ────────────────────────────────────────────────
 @st.cache_data(show_spinner=False, ttl=3600)
 def fetch_stock(ticker: str, period: str = "6mo") -> pd.DataFrame:
-    # For 1y display we need a full year; otherwise 6mo is enough for all rolling features
     fetch_period = period if period in ("1y", "2y") else MIN_FETCH_PERIOD
     df = yf.download(ticker, period=fetch_period, progress=False, auto_adjust=True)
     if df.empty:
@@ -254,93 +250,70 @@ def get_confidence(X: np.ndarray, signal: int) -> float:
         return round(proba[classes.index(signal)] * 100, 1)
     return None
 
-# ── Per-feature plain-English explanation ────────────────────────
+# ── Feature explanations ─────────────────────────────────────────
 def explain_feature(feat: str, val: float) -> str:
     pct = val * 100
     if feat == "MA_ratio":
-        direction = "above" if val > 1.0 else "below"
-        sentiment = "bullish — short-term trend is rising. 📈" if val > 1.0 else "bearish — short-term trend is falling. 📉"
-        return (f"We compare the 5-day average price to the 20-day average price. "
-                f"A ratio of {val:.3f} means the short-term average is {direction} the long-term average — {sentiment}")
+        d = "above" if val > 1.0 else "below"
+        s = "bullish — short-term trend is rising. 📈" if val > 1.0 else "bearish — short-term trend is falling. 📉"
+        return f"5-day vs 20-day average: ratio of {val:.3f} means short-term is {d} long-term — {s}"
     if feat == "MA_diff":
-        direction = "above" if val > 0 else "below"
-        return (f"The 5-day moving average is ${abs(val):.2f} {direction} the 20-day moving average. "
-                f"{'Positive gap suggests upward momentum.' if val > 0 else 'Negative gap suggests downward pressure.'}")
+        d = "above" if val > 0 else "below"
+        return f"MA5 is ${abs(val):.2f} {d} MA20. {'Positive gap = upward momentum.' if val > 0 else 'Negative gap = downward pressure.'}"
     if feat == "Price_vs_MA20":
-        rel      = "above" if val > 1 else "below"
-        pct_diff = abs(val - 1) * 100
-        return (f"Think of the 20-day average as the stock's one-month fair value. "
-                f"The current price is {pct_diff:.1f}% {rel} this average. "
-                f"{'Running above average — momentum is strong. 🔥' if val > 1 else 'Trading below average — may be weak or undervalued. 💡'}")
+        rel = "above" if val > 1 else "below"
+        return f"Price is {abs(val-1)*100:.1f}% {rel} the 20-day average (one-month fair value). {'Strong momentum. 🔥' if val > 1 else 'May be weak or undervalued. 💡'}"
     if feat == "Return_1d":
-        d = "UP" if val > 0 else "DOWN"
-        return f"The stock moved {d} {abs(pct):.2f}% yesterday. {'Positive momentum.' if val > 0 else 'Negative momentum.'}"
+        return f"Stock moved {'UP' if val>0 else 'DOWN'} {abs(pct):.2f}% yesterday. {'Positive momentum.' if val>0 else 'Negative momentum.'}"
     if feat == "Return_5d":
-        d = "UP" if val > 0 else "DOWN"
-        return (f"Over the past 5 trading days (~1 week), the stock is {d} {abs(pct):.2f}%. "
-                f"{'Short-term strength.' if val > 0 else 'Short-term weakness.'}")
+        return f"Past 5 days: {'UP' if val>0 else 'DOWN'} {abs(pct):.2f}%. {'Short-term strength.' if val>0 else 'Short-term weakness.'}"
     if feat == "Momentum_3":
-        d = "gained" if val > 0 else "lost"
-        return f"The stock has {d} {abs(pct):.2f}% over the last 3 days. {'Recent buying pressure.' if val > 0 else 'Recent selling pressure.'}"
+        return f"{'Gained' if val>0 else 'Lost'} {abs(pct):.2f}% over 3 days. {'Recent buying pressure.' if val>0 else 'Recent selling pressure.'}"
     if feat == "Momentum_10":
-        d = "up" if val > 0 else "down"
-        return (f"The stock is {d} {abs(pct):.2f}% over the last 10 days. "
-                f"{'Uptrend has staying power.' if val > 0 else 'Downtrend has staying power.'}")
+        return f"{'Up' if val>0 else 'Down'} {abs(pct):.2f}% over 10 days. {'Uptrend has staying power.' if val>0 else 'Downtrend has staying power.'}"
     if feat == "Momentum_20":
-        d = "up" if val > 0 else "down"
-        return f"The stock is {d} {abs(pct):.2f}% over ~1 month. {'Sustained upward trend.' if val > 0 else 'Sustained downward trend.'}"
+        return f"{'Up' if val>0 else 'Down'} {abs(pct):.2f}% over ~1 month. {'Sustained upward trend.' if val>0 else 'Sustained downward trend.'}"
     if feat == "MA_5":
-        return f"The average closing price over the last 5 trading days is ${val:.2f}. Used with MA_20 to detect trend direction."
+        return f"5-day average price: ${val:.2f}. Used with MA_20 to detect trend direction."
     if feat == "MA_20":
-        return f"The average closing price over the last 20 trading days (~1 month) is ${val:.2f}. Acts as a key support/resistance reference."
+        return f"20-day average price: ${val:.2f}. Key support/resistance reference (~1 month)."
     if feat == "Volatility_5":
-        level = "High" if val > 0.02 else "Low"
-        mood  = "moving a lot this week — higher risk and reward." if val > 0.02 else "calm and stable this week."
-        return f"{level} volatility ({abs(pct):.2f}%) — the stock has been {mood}"
+        return f"{'High' if val>0.02 else 'Low'} 5-day volatility ({abs(pct):.2f}%) — stock has been {'moving a lot this week.' if val>0.02 else 'calm this week.'}"
     if feat == "Volatility_10":
-        level = "High" if val > 0.02 else "Low"
-        mood  = "moving a lot over 2 weeks — uncertain market." if val > 0.02 else "stable over 2 weeks."
-        return f"{level} volatility ({abs(pct):.2f}%) — the stock has been {mood}"
+        return f"{'High' if val>0.02 else 'Low'} 10-day volatility ({abs(pct):.2f}%) — {'uncertain market over 2 weeks.' if val>0.02 else 'stable over 2 weeks.'}"
     if feat == "Volume_MA5":
-        return f"Average daily shares traded over the last 5 days: {val:,.0f}. Used as a baseline for volume spikes."
+        return f"Avg daily volume over 5 days: {val:,.0f} shares. Used as a volume baseline."
     if feat == "Volume_Ratio":
-        level = "higher" if val > 1 else "lower"
-        return (f"Today's volume is {val:.2f}x the 5-day average — {level} than usual. "
-                f"{'Elevated volume can confirm a price move.' if val > 1.2 else 'Normal or low volume.'}")
+        return f"Today's volume is {val:.2f}x the 5-day average. {'Elevated — can confirm a move.' if val>1.2 else 'Normal or low.'}"
     if feat == "Volume_Spike":
-        return (f"Today's volume is {val:.2f}x the 20-day average. "
-                f"{'Significant spike — strong interest. 🔊' if val > 1.5 else 'Normal range.' if val > 0.8 else 'Low volume — weak participation. 🔇'}")
+        return f"Volume is {val:.2f}x the 20-day average. {'Significant spike — strong interest. 🔊' if val>1.5 else 'Normal range.' if val>0.8 else 'Low — weak participation. 🔇'}"
     if feat == "HL_Range":
-        width = "wide" if val > 0.02 else "narrow"
-        return (f"Today's price moved {abs(pct):.2f}% from low to high — a {width} intraday range. "
-                f"{'Wide = active, volatile session.' if val > 0.02 else 'Narrow = calm, steady day.'}")
+        return f"Price moved {abs(pct):.2f}% from low to high today — {'wide (volatile session).' if val>0.02 else 'narrow (calm day).'}"
     if feat == "Breakout_20":
-        return (f"Price is at {val*100:.1f}% of the 20-day high. "
-                f"{'Close to 20-day high — potential breakout. 🚀' if val > 0.97 else 'Well below 20-day high — momentum is weak.'}")
+        return f"Price at {val*100:.1f}% of 20-day high. {'Near breakout. 🚀' if val>0.97 else 'Below recent highs — momentum weak.'}"
     if feat == "Drawdown_20":
-        return (f"Price is at {val*100:.1f}% of the 20-day low. "
-                f"{'Well above recent low — good support cushion. ✅' if val > 1.05 else 'Close to 20-day low — watch carefully.'}")
+        return f"Price at {val*100:.1f}% of 20-day low. {'Good support cushion. ✅' if val>1.05 else 'Near support — watch carefully.'}"
     return f"Value: {val:.4f}"
 
 FEATURE_TITLE = {
-    "Return_1d":     lambda v: f"⚡ Yesterday's price change: {v*100:.2f}%",
-    "Return_5d":     lambda v: f"📅 Last 5 days price change: {v*100:.2f}%",
-    "MA_5":          lambda v: f"📐 5-day average price: ${v:.2f}",
-    "MA_20":         lambda v: f"📐 20-day average price: ${v:.2f}",
-    "MA_ratio":      lambda v: f"📊 Short vs Long-term Trend: {v:.3f}",
-    "MA_diff":       lambda v: f"📏 MA gap (short minus long): ${v:.2f}",
-    "Price_vs_MA20": lambda v: f"📍 Price vs 20-day average: {v:.3f}",
-    "Volatility_5":  lambda v: f"🌊 5-day price swings: {v*100:.2f}%",
-    "Volatility_10": lambda v: f"🌊 10-day price swings: {v*100:.2f}%",
+    "Return_1d":     lambda v: f"⚡ Yesterday's change: {v*100:.2f}%",
+    "Return_5d":     lambda v: f"📅 5-day change: {v*100:.2f}%",
+    "MA_5":          lambda v: f"📐 5-day avg price: ${v:.2f}",
+    "MA_20":         lambda v: f"📐 20-day avg price: ${v:.2f}",
+    "MA_ratio":      lambda v: f"📊 Short vs Long Trend: {v:.3f}",
+    "MA_diff":       lambda v: f"📏 MA gap: ${v:.2f}",
+    "Price_vs_MA20": lambda v: f"📍 Price vs 20-day avg: {v:.3f}",
+    "Volatility_5":  lambda v: f"🌊 5-day volatility: {v*100:.2f}%",
+    "Volatility_10": lambda v: f"🌊 10-day volatility: {v*100:.2f}%",
     "Volume_MA5":    lambda v: f"📦 5-day avg volume: {v:,.0f}",
-    "Volume_Ratio":  lambda v: f"📦 Volume ratio (today vs 5d avg): {v:.2f}x",
-    "Volume_Spike":  lambda v: f"🔊 Volume spike (today vs 20d avg): {v:.2f}x",
+    "Volume_Ratio":  lambda v: f"📦 Volume vs 5d avg: {v:.2f}x",
+    "Volume_Spike":  lambda v: f"🔊 Volume vs 20d avg: {v:.2f}x",
     "Momentum_3":    lambda v: f"🚀 3-day momentum: {v*100:.2f}%",
     "Momentum_10":   lambda v: f"🏃 10-day momentum: {v*100:.2f}%",
     "Momentum_20":   lambda v: f"🗓️ 1-month momentum: {v*100:.2f}%",
-    "HL_Range":      lambda v: f"📏 Today's High-Low range: {v*100:.2f}%",
-    "Breakout_20":   lambda v: f"🚀 Price vs 20-day high: {v*100:.1f}%",
-    "Drawdown_20":   lambda v: f"🛡️ Price vs 20-day low: {v*100:.1f}%",
+    "HL_Range":      lambda v: f"📏 High-Low range: {v*100:.2f}%",
+    "Breakout_20":   lambda v: f"🚀 vs 20-day high: {v*100:.1f}%",
+    "Drawdown_20":   lambda v: f"🛡️ vs 20-day low: {v*100:.1f}%",
 }
 
 # ── Model helpers ────────────────────────────────────────────────
@@ -352,12 +325,6 @@ def get_top_features(n: int = 3):
     return [(FEATURE_COLS[i], imp[i]) for i in indices]
 
 def predict_ticker(ticker: str, fetch_period: str = "6mo"):
-    """
-    fetch_period controls how much data is downloaded.
-    For display windows > 6mo (e.g. 1y) we fetch more so the chart shows the full range.
-    Features and the signal are always computed from the full fetched dataset,
-    and the prediction uses the most recent row only.
-    """
     raw = fetch_stock(ticker, period=fetch_period)
     if raw.empty or len(raw) < 25:
         return None, None, None, None
@@ -368,6 +335,61 @@ def predict_ticker(ticker: str, fetch_period: str = "6mo"):
     conf   = get_confidence(X, signal)
     return signal, conf, latest, df
 
+# ── Backtest: past 3-month signal accuracy ───────────────────────
+@st.cache_data(show_spinner=False, ttl=3600)
+def backtest_accuracy(ticker: str, forward_days: int = 5) -> dict:
+    """
+    For each day in the past 3 months, compute features and predict a signal.
+    Then check if the stock actually moved in the predicted direction forward_days later.
+    Returns accuracy stats.
+    """
+    raw = fetch_stock(ticker, period="1y")
+    if raw.empty or len(raw) < 60:
+        return {}
+    df = compute_features(raw)
+    df = df.dropna(subset=FEATURE_COLS).reset_index(drop=True)
+
+    # Use last 3 months only for backtest evaluation
+    cutoff = df["Date"].max() - pd.Timedelta(days=90)
+    df_bt  = df[df["Date"] <= df["Date"].max() - pd.Timedelta(days=forward_days)]
+    df_bt  = df_bt[df_bt["Date"] >= cutoff].reset_index(drop=True)
+
+    if len(df_bt) < 10:
+        return {}
+
+    correct = 0
+    total   = 0
+    by_signal = {1: {"correct": 0, "total": 0}, 0: {"correct": 0, "total": 0}, -1: {"correct": 0, "total": 0}}
+
+    for idx, row in df_bt.iterrows():
+        X      = row[FEATURE_COLS].values.reshape(1, -1)
+        signal = int(model.predict(X)[0])
+
+        # Find actual return forward_days later
+        future_idx = df[df["Date"] > row["Date"]].head(forward_days)
+        if len(future_idx) < forward_days:
+            continue
+        future_ret = float(future_idx.iloc[-1]["Close"]) / float(row["Close"]) - 1
+
+        # Check if signal was correct
+        was_correct = (
+            (signal == 1  and future_ret > 0.01) or
+            (signal == -1 and future_ret < -0.01) or
+            (signal == 0  and abs(future_ret) <= 0.01)
+        )
+        correct += int(was_correct)
+        total   += 1
+        by_signal[signal]["total"]   += 1
+        by_signal[signal]["correct"] += int(was_correct)
+
+    if total == 0:
+        return {}
+    return {
+        "overall": round(correct / total * 100, 1),
+        "total":   total,
+        "by_signal": by_signal,
+    }
+
 # ── Reusable UI helpers ──────────────────────────────────────────
 def render_signal_plain(signal: int):
     title, body = SIGNAL_PLAIN[signal]
@@ -376,23 +398,30 @@ def render_signal_plain(signal: int):
         f"<div class='{css}'><b>{title}</b><br><span>{body}</span></div>",
         unsafe_allow_html=True,
     )
+    st.markdown(f"<div class='disclaimer'>{DISCLAIMER}</div>", unsafe_allow_html=True)
 
 def render_confidence(confidence: float, color: str):
     if confidence is None:
         return
-    if confidence >= 65:
-        note, icon, nc = "High confidence — the model is fairly certain about this signal.", "✅", "#166534"
+    # Context: random baseline for 3-class = 33%
+    if confidence >= 60:
+        note, icon, nc = "High confidence — model is fairly certain.", "✅", "#166534"
     elif confidence >= 45:
         note, icon, nc = "Moderate confidence — signal is plausible but not strong.", "🟡", "#854d0e"
     else:
-        note, icon, nc = "Low confidence — treat with caution — the model is not very sure about this signal.", "🔺", "#991b1b"
+        note, icon, nc = "Low confidence — close to random guessing (baseline ~33%). Treat with caution.", "🔺", "#991b1b"
+
     st.markdown("**Model Confidence**")
     st.markdown(
         f"<div style='background:#e5e7eb;border-radius:8px;height:22px;width:100%;overflow:hidden;margin-bottom:4px'>"
         f"<div style='width:{confidence}%;height:22px;background:{color};border-radius:8px;"
         f"display:flex;align-items:center;padding-left:10px'>"
         f"<span style='color:white;font-weight:700;font-size:13px'>{confidence:.1f}%</span></div></div>"
-        f"<div style='font-size:13px;color:{nc};margin-top:2px'>{icon} {note}</div>",
+        f"<div style='font-size:13px;color:{nc};margin-top:2px'>{icon} {note}</div>"
+        f"<div style='font-size:11px;color:#94a3b8;margin-top:3px'>"
+        f"ℹ️ In a 3-class model (BUY / HOLD / SELL), random guessing scores ~33%. "
+        f"Confidence above 50% indicates the model has a meaningful edge over chance."
+        f"</div>",
         unsafe_allow_html=True,
     )
 
@@ -419,38 +448,44 @@ def render_top_factors(latest: pd.Series):
 with st.sidebar:
     st.header("⚙️ Settings")
 
-    # ── Ticker search ──────────────────────────────────────────────
+    if "extra_tickers" not in st.session_state:
+        st.session_state["extra_tickers"] = []
+    if "selected_tickers" not in st.session_state:
+        st.session_state["selected_tickers"] = ["AAPL", "MSFT", "NVDA", "TSLA", "AMZN"]
+
     st.markdown("**Search & add a stock**")
     search_input = st.text_input(
         "search_ticker",
-        placeholder="Type ticker or company name (e.g. NFLX, Netflix)",
+        placeholder="Ticker or company name (e.g. Netflix, UBER)",
         label_visibility="collapsed",
     )
 
-    # If user typed something, try to resolve it via yFinance
     if search_input.strip():
-        candidate = search_input.strip().upper()
-        name = get_company_name(candidate)
-        if name != candidate:
-            # Valid ticker with a real company name
-            if st.button(f"➕ Add  {candidate} — {name}", use_container_width=True):
-                if "extra_tickers" not in st.session_state:
-                    st.session_state["extra_tickers"] = []
-                if candidate not in st.session_state["extra_tickers"]:
-                    st.session_state["extra_tickers"].append(candidate)
+        with st.spinner("Searching…"):
+            results = search_ticker(search_input.strip())
+        if results:
+            for sym, name in results[:3]:
+                label = f"➕ {sym} — {name}"
+                if st.button(label, key=f"add_{sym}", use_container_width=True):
+                    if sym not in st.session_state["extra_tickers"]:
+                        st.session_state["extra_tickers"].append(sym)
+                    if sym not in st.session_state["selected_tickers"]:
+                        st.session_state["selected_tickers"].append(sym)
                     st.rerun()
         else:
-            st.caption(f"⚠️ Could not find company for '{search_input.strip()}'. Check the ticker symbol.")
+            st.caption(f"⚠️ No results for '{search_input.strip()}'. Try the exact ticker symbol.")
 
-    extra_tickers = st.session_state.get("extra_tickers", [])
-    all_tickers   = list(dict.fromkeys(DEFAULT_TICKERS + extra_tickers))
+    all_tickers    = list(dict.fromkeys(DEFAULT_TICKERS + st.session_state["extra_tickers"]))
+    valid_selected = [t for t in st.session_state["selected_tickers"] if t in all_tickers]
 
     selected = st.multiselect(
         "Stocks to analyse",
         options=all_tickers,
-        default=["AAPL", "MSFT", "NVDA", "TSLA", "AMZN"],
+        default=valid_selected,
         format_func=ticker_label,
+        key="stocks_multiselect",
     )
+    st.session_state["selected_tickers"] = selected
 
     run_btn = st.button("🔍 Get Recommendations", type="primary")
 
@@ -481,10 +516,8 @@ with tab_home:
         "a clear **Buy / Hold / Sell** signal — with confidence scores and plain-English explanations "
         "so you always understand *why* the model made its call."
     )
-
     st.markdown("---")
 
-    # Mission
     st.markdown(
         "<div class='home-section'>"
         "<h3>🎯 Our Mission</h3>"
@@ -501,17 +534,18 @@ with tab_home:
     col1, col2 = st.columns(2)
 
     with col1:
-        # Dataset
         st.markdown(
             "<div class='home-section'>"
-            "<h3>📦 Dataset & Features</h3>"
-            "<p>Our model was trained on historical market data sourced via <b>yFinance</b>, "
-            "covering <b>20 large-cap S&P 500 companies</b> with thousands of daily price and volume observations.</p>"
+            "<h3>📦 Dataset & Training</h3>"
+            f"<p>The model was trained on historical market data sourced via <b>yFinance</b>, "
+            f"covering <b>{MODEL_TRAIN_INFO['companies']} large-cap {MODEL_TRAIN_INFO['index']} companies</b> "
+            f"over the period <b>{MODEL_TRAIN_INFO['period']}</b> ({MODEL_TRAIN_INFO['source']}).</p>"
             "<div style='background:#fefce8;border-left:4px solid #eab308;border-radius:6px;padding:10px 14px;margin:10px 0;font-size:0.88rem;color:#713f12'>"
             "<b>⚠️ Accuracy Note</b><br>"
-            "Because the model was trained on large-cap U.S. stocks, predictions are most reliable for:<br>"
+            "Predictions are most reliable for:<br>"
             "✅ S&P 500 components &nbsp; ✅ Large-cap U.S. equities &nbsp; ✅ U.S. ETFs (SPY, QQQ)<br>"
-            "Predictions for small-cap stocks, international equities, or crypto ETFs may be less accurate — use with caution."
+            "Small-cap stocks, international equities, or crypto ETFs may be less accurate — use with caution.<br><br>"
+            "<b>Training period:</b> Data runs from 2021 through to the current date (2026), sourced live via yFinance."
             "</div>"
             "<p>We engineer <b>18 technical features</b> from raw OHLCV data:</p>",
             unsafe_allow_html=True,
@@ -519,7 +553,7 @@ with tab_home:
         feature_table = pd.DataFrame({
             "Category": [
                 "Returns", "Returns",
-                "Trend (Moving Avg)", "Trend (Moving Avg)", "Trend (Moving Avg)",
+                "Trend", "Trend", "Trend",
                 "Momentum", "Momentum", "Momentum",
                 "Volatility", "Volatility",
                 "Volume", "Volume", "Volume",
@@ -534,44 +568,50 @@ with tab_home:
                 "HL_Range", "Breakout_20", "Drawdown_20",
             ],
         })
-        st.dataframe(feature_table, use_container_width=True, hide_index=True, height=320)
+        st.dataframe(feature_table, use_container_width=True, hide_index=True, height=310)
         st.markdown("</div>", unsafe_allow_html=True)
 
     with col2:
-        # Model
         st.markdown(
             "<div class='home-section'>"
             "<h3>🧠 Model & Method</h3>"
             "<p>This app uses a <b>Random Forest Classifier</b> trained offline on labelled historical data. "
-            "Each trading day is labelled as a Buy, Hold, or Sell signal based on subsequent price movement.</p>"
+            "Each trading day is labelled as BUY, HOLD, or SELL based on subsequent price movement.</p>"
             "<div class='method-block'>"
             "<b>Random Forest Classifier</b><br>"
             "An ensemble of decision trees that votes on the most likely outcome. "
-            "It outputs a probability distribution across BUY / HOLD / SELL — "
-            "which we use to compute the <b>Confidence %</b> shown in the app."
+            "Outputs a probability distribution across BUY / HOLD / SELL — used to compute the <b>Confidence %</b>."
             "</div>"
             "<div class='method-block green'>"
+            "<b>Confidence Score</b><br>"
+            "In a 3-class problem, random guessing scores ~33%. "
+            "Scores above 50% indicate the model has a meaningful signal. "
+            "Scores near 33% are essentially noise — treat them with caution."
+            "</div>"
+            "<div class='method-block'>"
             "<b>Feature Importance</b><br>"
             "The model ranks which indicators matter most. "
-            "The app surfaces the <b>Top 3 factors</b> driving each prediction so you always know why."
+            "The app surfaces the <b>Top 3 factors</b> driving each prediction."
             "</div>"
-            "<p style='margin-top:14px;font-size:0.9rem;color:#555'>"
+            "<p style='margin-top:14px;font-size:0.88rem;color:#7f1d1d;background:#fef2f2;"
+            "border-left:4px solid #ef4444;border-radius:6px;padding:10px 14px'>"
             "⚠️ <b>Disclaimer:</b> This tool is for educational and informational purposes only. "
-            "It is not financial advice. Always do your own research and consult a licensed advisor before investing."
+            "It is <b>not financial advice</b>. Always do your own research and consult a licensed "
+            "financial advisor before making any investment decisions."
             "</p>"
             "</div>",
             unsafe_allow_html=True,
         )
 
-        # How to use
         st.markdown(
             "<div class='home-section'>"
             "<h3>🗺️ How to Use</h3>"
             "<ol>"
-            "<li>Select your <b>stocks</b> in the sidebar (or add custom tickers)</li>"
-            "<li>Click <b>🔍 Get Recommendations</b> for a batch overview of all selected stocks</li>"
-            "<li>Go to <b>Single Stock Detail</b> for a deep-dive — confidence score, signal explanation, and top factors</li>"
-            "<li>Head to <b>Price Chart</b> and pick a time period (1 Week to 1 Year) to view price and moving averages</li>"
+            "<li>Search for a stock in the sidebar by ticker or company name</li>"
+            "<li>Select stocks to analyse from the list</li>"
+            "<li>Click <b>🔍 Get Recommendations</b> for a batch overview — sorted by signal strength</li>"
+            "<li>Go to <b>Single Stock Detail</b> for a deep-dive: confidence, explanation, and top factors</li>"
+            "<li>Use <b>Price Chart</b> to view price and moving averages across any time period</li>"
             "</ol>"
             "</div>",
             unsafe_allow_html=True,
@@ -583,7 +623,8 @@ with tab_home:
 with tab_rec:
     st.title("📈 Stock Investment Decision Support")
     st.markdown("Pre-trained Random Forest → live market data → **Buy / Hold / Sell** signal.")
-    st.success("✅ Model loaded from `model.pkl`" + (" &nbsp; 🎯 Confidence scoring enabled" if HAS_PROBA else ""))
+    st.success("✅ Model loaded" + (" &nbsp; 🎯 Confidence scoring enabled" if HAS_PROBA else ""))
+    st.markdown(f"<div class='disclaimer'>{DISCLAIMER}</div>", unsafe_allow_html=True)
 
     if not selected:
         st.info("Select stocks in the sidebar and click **Get Recommendations**.")
@@ -595,14 +636,14 @@ with tab_rec:
             signal, confidence, latest, _ = predict_ticker(ticker)
             if signal is None:
                 results.append({
-                    "Ticker": ticker,
-                    "Company": COMPANY_NAMES.get(ticker, ""),
+                    "Ticker": ticker, "Company": get_company_name(ticker),
                     "Close ($)": "—", "Signal": "⚠️ No data", "Confidence": "—",
+                    "_sig": None, "_conf": -1,
                 })
                 continue
             results.append({
                 "Ticker":     ticker,
-                "Company":    COMPANY_NAMES.get(ticker, ""),
+                "Company":    get_company_name(ticker),
                 "Close ($)":  round(float(latest["Close"]), 2),
                 "Signal":     f"{SIGNAL_EMOJI[signal]} {SIGNAL_LABEL[signal]}",
                 "Confidence": f"{confidence:.1f}%" if confidence is not None else "N/A",
@@ -614,7 +655,7 @@ with tab_rec:
 
     if "results" in st.session_state:
         res   = st.session_state["results"]
-        valid = [r for r in res if "_sig" in r]
+        valid = [r for r in res if r.get("_sig") is not None]
 
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("🟢 BUY",  sum(1 for r in valid if r["_sig"] ==  1))
@@ -624,86 +665,144 @@ with tab_rec:
         c4.metric("🎯 Avg Confidence", f"{avg_conf:.1f}%")
 
         st.markdown("---")
-        display = pd.DataFrame([{k: v for k, v in r.items() if not k.startswith("_")} for r in res])
+
+        # Sort options
+        sort_by = st.radio(
+            "Sort by",
+            ["Signal (BUY first)", "Confidence (highest first)", "Default order"],
+            horizontal=True,
+            index=0,
+        )
+
+        def sort_key(r):
+            if sort_by == "Signal (BUY first)":
+                # BUY=1 first, then HOLD=0, then SELL=-1, then No data
+                order = {1: 0, 0: 1, -1: 2, None: 3}
+                return (order.get(r.get("_sig"), 3), -r.get("_conf", -1))
+            elif sort_by == "Confidence (highest first)":
+                return -r.get("_conf", -1)
+            return 0  # default
+
+        sorted_res = sorted(res, key=sort_key)
+        display = pd.DataFrame([{k: v for k, v in r.items() if not k.startswith("_")} for r in sorted_res])
         st.dataframe(display, use_container_width=True, hide_index=True)
 
         if HAS_PROBA and valid:
             st.markdown("#### 🎯 Confidence by Stock")
-            fig_c, ax_c = plt.subplots(figsize=(10, 2.5))
-            tickers_ = [r["Ticker"] for r in valid]
-            confs_   = [r["_conf"]  for r in valid]
-            colors_  = [SIGNAL_COLOR[r["_sig"]] for r in valid]
+            # Sort chart same way
+            sorted_valid = sorted(valid, key=sort_key)
+            fig_c, ax_c  = plt.subplots(figsize=(10, max(2.5, len(sorted_valid) * 0.4)))
+            tickers_ = [r["Ticker"] for r in sorted_valid]
+            confs_   = [r["_conf"]  for r in sorted_valid]
+            colors_  = [SIGNAL_COLOR[r["_sig"]] for r in sorted_valid]
             bars = ax_c.barh(tickers_, confs_, color=colors_, alpha=0.85)
             ax_c.set_xlim(0, 100)
             ax_c.set_xlabel("Confidence (%)")
-            ax_c.axvline(50, color="gray", linestyle="--", alpha=0.5, linewidth=1)
+            ax_c.axvline(33, color="#94a3b8", linestyle=":", linewidth=1, label="Random baseline (33%)")
+            ax_c.axvline(50, color="gray",    linestyle="--", alpha=0.5, linewidth=1, label="50% threshold")
             for bar, v in zip(bars, confs_):
                 ax_c.text(v + 1, bar.get_y() + bar.get_height() / 2, f"{v:.1f}%", va="center", fontsize=9)
+            ax_c.legend(fontsize=8)
             ax_c.grid(axis="x", alpha=0.2)
             fig_c.tight_layout()
             st.pyplot(fig_c)
             plt.close(fig_c)
 
 # ════════════════════════════════════════════════════════════════
-# Tab 2 — Period Comparison
-# ════════════════════════════════════════════════════════════════
-# Tab 3 — Single Stock Detail
+# Tab 2 — Single Stock Detail  (auto-analyse on ticker change)
 # ════════════════════════════════════════════════════════════════
 with tab_detail:
     pick = st.selectbox(
         "Choose a stock",
         options=selected if selected else DEFAULT_TICKERS[:5],
         format_func=ticker_label,
+        key="detail_pick",
     )
 
-    if st.button("Analyse", key="analyse_btn"):
-        with st.spinner(f"Fetching {pick}…"):
+    # Auto-analyse when ticker changes OR on first load
+    if st.session_state.get("detail_last_pick") != pick:
+        st.session_state["detail_last_pick"]   = pick
+        st.session_state["detail_result"]      = None  # clear stale result
+        st.session_state["detail_needs_fetch"] = True
+
+    if st.session_state.get("detail_needs_fetch", True):
+        with st.spinner(f"Analysing {ticker_label(pick)}…"):
             signal, confidence, latest, df_feat = predict_ticker(pick)
+        st.session_state["detail_result"]      = (signal, confidence, latest, df_feat)
+        st.session_state["detail_needs_fetch"] = False
+    else:
+        signal, confidence, latest, df_feat = st.session_state.get("detail_result", (None, None, None, None))
 
-        if signal is None:
-            st.error(f"Could not fetch data for **{ticker_label(pick)}**. Check the ticker symbol.")
+    # Refresh button
+    if st.button("🔄 Refresh", key="analyse_btn"):
+        with st.spinner(f"Refreshing {ticker_label(pick)}…"):
+            signal, confidence, latest, df_feat = predict_ticker(pick)
+        st.session_state["detail_result"] = (signal, confidence, latest, df_feat)
+
+    if signal is None:
+        st.error(f"Could not fetch data for **{ticker_label(pick)}**. Check the ticker symbol.")
+    else:
+        color   = SIGNAL_COLOR[signal]
+        co_name = get_company_name(pick)
+        conf_text = (
+            f"<div style='font-size:1.1rem;color:{color}99;margin-top:6px'>"
+            f"Confidence: {confidence:.1f}%</div>"
+        ) if confidence is not None else ""
+
+        st.markdown(
+            f"<div style='text-align:center;padding:20px;border-radius:12px;"
+            f"background:{color}15;border:2px solid {color}'>"
+            f"<span style='font-size:3rem'>{SIGNAL_EMOJI[signal]}</span><br>"
+            f"<span style='font-size:1rem;color:#888'>{co_name}</span><br>"
+            f"<span style='font-size:2rem;font-weight:700;color:{color}'>{pick}: {SIGNAL_LABEL[signal]}</span>"
+            + conf_text + "</div>",
+            unsafe_allow_html=True,
+        )
+        st.markdown("")
+
+        render_confidence(confidence, color)
+        st.markdown("")
+        render_signal_plain(signal)
+        st.markdown("")
+
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Latest Close",    f"${float(latest['Close']):.2f}")
+        m2.metric("1-Day Return",    f"{float(latest['Return_1d'])*100:.2f}%")
+        m3.metric("5-Day Return",    f"{float(latest['Return_5d'])*100:.2f}%")
+        m4.metric("MA Ratio (5/20)", f"{float(latest['MA_ratio']):.4f}")
+
+        st.markdown("---")
+        render_top_factors(latest)
+
+        # Backtest accuracy
+        st.markdown("---")
+        st.markdown("#### 📊 Historical Signal Accuracy (past 3 months)")
+        with st.spinner("Running backtest…"):
+            bt = backtest_accuracy(pick)
+        if bt:
+            ba1, ba2, ba3, ba4 = st.columns(4)
+            ba1.metric("Overall Accuracy", f"{bt['overall']}%")
+            ba2.metric("🟢 BUY  accuracy",
+                       f"{round(bt['by_signal'][1]['correct']/bt['by_signal'][1]['total']*100,1)}%" if bt['by_signal'][1]['total'] else "—")
+            ba3.metric("🟡 HOLD accuracy",
+                       f"{round(bt['by_signal'][0]['correct']/bt['by_signal'][0]['total']*100,1)}%" if bt['by_signal'][0]['total'] else "—")
+            ba4.metric("🔴 SELL accuracy",
+                       f"{round(bt['by_signal'][-1]['correct']/bt['by_signal'][-1]['total']*100,1)}%" if bt['by_signal'][-1]['total'] else "—")
+            st.caption(f"Based on {bt['total']} trading days. A signal is 'correct' if the stock moved >1% in the predicted direction within 5 trading days.")
         else:
-            color    = SIGNAL_COLOR[signal]
-            co_name  = COMPANY_NAMES.get(pick, pick)
-            conf_text = (f"<div style='font-size:1.1rem;color:{color}99;margin-top:6px'>"
-                         f"Confidence: {confidence:.1f}%</div>") if confidence is not None else ""
+            st.caption("Not enough data to compute backtest accuracy.")
 
-            st.markdown(
-                f"<div style='text-align:center;padding:20px;border-radius:12px;"
-                f"background:{color}15;border:2px solid {color}'>"
-                f"<span style='font-size:3rem'>{SIGNAL_EMOJI[signal]}</span><br>"
-                f"<span style='font-size:1rem;color:#888'>{co_name}</span><br>"
-                f"<span style='font-size:2rem;font-weight:700;color:{color}'>{pick}: {SIGNAL_LABEL[signal]}</span>"
-                + conf_text + "</div>",
-                unsafe_allow_html=True,
-            )
-            st.markdown("")
-
-            render_confidence(confidence, color)
-            st.markdown("")
-            render_signal_plain(signal)
-            st.markdown("")
-
-            m1, m2, m3, m4 = st.columns(4)
-            m1.metric("Latest Close",    f"${float(latest['Close']):.2f}")
-            m2.metric("1-Day Return",    f"{float(latest['Return_1d'])*100:.2f}%")
-            m3.metric("5-Day Return",    f"{float(latest['Return_5d'])*100:.2f}%")
-            m4.metric("MA Ratio (5/20)", f"{float(latest['MA_ratio']):.4f}")
-
-            st.markdown("---")
-            render_top_factors(latest)
-
-            st.markdown("---")
-            st.markdown("#### 📊 Feature Values Used for Prediction")
-            feat_df = pd.DataFrame({
-                "Feature":     FEATURE_COLS,
-                "Value":       [round(float(latest[f]), 6) for f in FEATURE_COLS],
-                "Description": [FEATURE_DESCRIBE.get(f, "") for f in FEATURE_COLS],
-            })
-            st.dataframe(feat_df, use_container_width=True, hide_index=True, height=320)
+        st.markdown("---")
+        st.markdown("#### 📋 Feature Values Used for Prediction")
+        feat_df = pd.DataFrame({
+            "Feature":     FEATURE_COLS,
+            "Value":       [round(float(latest[f]), 6) for f in FEATURE_COLS],
+            "Description": [FEATURE_DESCRIBE.get(f, "") for f in FEATURE_COLS],
+        })
+        st.dataframe(feat_df, use_container_width=True, hide_index=True, height=320)
 
 # ════════════════════════════════════════════════════════════════
-# Tab 4 — Price Chart
+# Tab 3 — Price Chart
 # ════════════════════════════════════════════════════════════════
 with tab_chart:
     chart_ticker = st.selectbox(
@@ -724,7 +823,6 @@ with tab_chart:
 
     if st.button("Show Chart", key="chart_btn"):
         with st.spinner(f"Loading {chart_ticker}…"):
-            # Pass the display period so 1-year charts actually fetch 1 year of data
             fetch_p = chart_display_period if chart_display_period == "1y" else "6mo"
             sig, conf, latest, df_feat = predict_ticker(chart_ticker, fetch_period=fetch_p)
 
@@ -736,14 +834,27 @@ with tab_chart:
                 chart_display_period,
             )
             if df_plot.empty:
-                st.error("Not enough data for the selected display period. Try a longer window.")
+                st.error("Not enough data for the selected period. Try a longer window.")
             else:
                 period_label = DISPLAY_PERIOD_LABEL[chart_display_period]
-                co_name      = COMPANY_NAMES.get(chart_ticker, chart_ticker)
+                co_name      = get_company_name(chart_ticker)
+
                 fig, ax = plt.subplots(figsize=(10, 4))
                 ax.plot(df_plot["Date"], df_plot["Close"], label="Close", color="#3b82f6", linewidth=1.8)
                 ax.plot(df_plot["Date"], df_plot["MA_5"],  label="MA 5",  color="#f97316", linewidth=1.2, linestyle="--")
                 ax.plot(df_plot["Date"], df_plot["MA_20"], label="MA 20", color="#a855f7", linewidth=1.2, linestyle="--")
+
+                # ── Mark today's signal on the chart ──────────────────
+                if sig is not None:
+                    last_date  = df_plot["Date"].iloc[-1]
+                    last_close = float(df_plot["Close"].iloc[-1])
+                    sig_color  = SIGNAL_COLOR[sig]
+                    sig_marker = {1: "^", 0: "o", -1: "v"}[sig]
+                    sig_offset = {1: 1.01, 0: 1.0, -1: 0.99}[sig]
+                    ax.scatter(last_date, last_close * sig_offset,
+                               marker=sig_marker, color=sig_color, s=150, zorder=5,
+                               label=f"Signal: {SIGNAL_LABEL[sig]}")
+                    ax.axvline(last_date, color=sig_color, linestyle=":", linewidth=1.2, alpha=0.6)
 
                 if chart_display_period == "1wk":
                     ax.xaxis.set_major_formatter(mdates.DateFormatter("%a %b %d"))
