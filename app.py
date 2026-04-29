@@ -127,30 +127,99 @@ def fetch_stock(ticker: str, period: str = "6mo") -> pd.DataFrame:
 
 # ── Explanation helper ───────────────────────────────────────────
 def _explain_feature(feat: str, val: float, signal: int) -> str:
-    """Return explanation string if this feature supports the signal, else empty string."""
-    if signal == 1:  # BUY
-        if feat == "MA_ratio"      and val > 1.02:  return f"MA5/MA20 = {val:.3f} → short-term trend above long-term"
-        if feat == "Momentum_10"   and val > 0.05:  return f"10-day momentum = {val*100:.1f}% → strong upward momentum"
-        if feat == "Momentum_20"   and val > 0.05:  return f"20-day momentum = {val*100:.1f}% → sustained upward trend"
-        if feat == "Return_5d"     and val > 0.03:  return f"5-day return = {val*100:.1f}% → recent price strength"
-        if feat == "Volume_Spike"  and val > 1.3:   return f"Volume spike = {val:.2f}x avg → strong buying interest"
-        if feat == "Breakout_20"   and val > 0.97:  return f"Near 20-day high ({val:.3f}) → potential breakout"
-        if feat == "Price_vs_MA20" and val > 1.02:  return f"Price {val:.3f}x above 20-day MA → bullish positioning"
+    """
+    Return a beginner-friendly (emoji + plain English) explanation for this feature.
+    Every feature always returns a string — no empty fallback.
+    """
+    pct = val * 100  # convert ratio to percentage where relevant
 
-    elif signal == -1:  # SELL
-        if feat == "MA_ratio"      and val < 0.98:  return f"MA5/MA20 = {val:.3f} → short-term trend below long-term"
-        if feat == "Momentum_10"   and val < -0.05: return f"10-day momentum = {val*100:.1f}% → strong downward momentum"
-        if feat == "Momentum_20"   and val < -0.05: return f"20-day momentum = {val*100:.1f}% → sustained downward trend"
-        if feat == "Return_5d"     and val < -0.03: return f"5-day return = {val*100:.1f}% → recent price weakness"
-        if feat == "Drawdown_20"   and val < 1.03:  return f"Near 20-day low ({val:.3f}) → bearish pressure"
-        if feat == "Price_vs_MA20" and val < 0.98:  return f"Price {val:.3f}x below 20-day MA → bearish positioning"
+    explanations = {
+        # ── Trend indicators ──────────────────────────────────────────
+        "MA_ratio": (
+            f"📊 Short-term vs Long-term Trend: {val:.3f}\n"
+            f"We compare the 5-day average price to the 20-day average price. "
+            f"{'A value above 1.0 means the stock has been rising recently — a bullish sign. 📈' if val > 1.0 else 'A value below 1.0 means the stock has been falling recently — a bearish sign. 📉'}"
+        ),
+        "MA_diff": (
+            f"📏 Gap between short & long trend: ${val:.2f}\n"
+            f"{'The short-term average is ABOVE the long-term average by ${:.2f}, suggesting upward momentum.'.format(abs(val)) if val > 0 else 'The short-term average is BELOW the long-term average by ${:.2f}, suggesting downward pressure.'.format(abs(val))}"
+        ),
+        "Price_vs_MA20": (
+            f"📍 Price vs 20-day average: {val:.3f}\n"
+            f"Think of the 20-day average as the stock's 'fair value' over the past month. "
+            f"{'The current price is {:.1f}% ABOVE this average — the stock is running hot. 🔥'.format((val-1)*100) if val > 1 else 'The current price is {:.1f}% BELOW this average — the stock may be undervalued. 💡'.format((1-val)*100)}"
+        ),
+        # ── Momentum indicators ───────────────────────────────────────
+        "Return_1d": (
+            f"⚡ Yesterday's price change: {pct:.2f}%\n"
+            f"{'The stock went UP {:.2f}% yesterday — recent positive momentum.'.format(abs(pct)) if val > 0 else 'The stock went DOWN {:.2f}% yesterday — recent negative momentum.'.format(abs(pct))}"
+        ),
+        "Return_5d": (
+            f"📅 Last 5 days price change: {pct:.2f}%\n"
+            f"{'Over the past week, the stock is UP {:.2f}% — short-term strength.'.format(abs(pct)) if val > 0 else 'Over the past week, the stock is DOWN {:.2f}% — short-term weakness.'.format(abs(pct))}"
+        ),
+        "Momentum_3": (
+            f"🚀 3-day momentum: {pct:.2f}%\n"
+            f"{'The stock gained {:.2f}% in 3 days — very recent buying pressure.'.format(abs(pct)) if val > 0 else 'The stock lost {:.2f}% in 3 days — very recent selling pressure.'.format(abs(pct))}"
+        ),
+        "Momentum_10": (
+            f"🏃 10-day momentum: {pct:.2f}%\n"
+            f"{'Up {:.2f}% over 2 weeks — the uptrend has some staying power.'.format(abs(pct)) if val > 0 else 'Down {:.2f}% over 2 weeks — the downtrend has some staying power.'.format(abs(pct))}"
+        ),
+        "Momentum_20": (
+            f"🗓️ 1-month momentum: {pct:.2f}%\n"
+            f"{'Up {:.2f}% over the past month — a sustained upward trend.'.format(abs(pct)) if val > 0 else 'Down {:.2f}% over the past month — a sustained downward trend.'.format(abs(pct))}"
+        ),
+        # ── Moving averages (absolute levels, less informative alone) ─
+        "MA_5": (
+            f"📐 5-day average price: ${val:.2f}\n"
+            f"This is the average closing price over the last 5 trading days. Used together with MA_20 to detect trend direction."
+        ),
+        "MA_20": (
+            f"📐 20-day average price: ${val:.2f}\n"
+            f"This is the average closing price over the last 20 trading days (~1 month). Acts as a support/resistance reference."
+        ),
+        # ── Volatility indicators ─────────────────────────────────────
+        "Volatility_5": (
+            f"🌊 5-day price swings: {pct:.2f}%\n"
+            f"{'High volatility ({:.2f}%) — the stock has been moving a lot this week. Higher risk, higher reward potential.'.format(abs(pct)) if val > 0.02 else 'Low volatility ({:.2f}%) — the stock has been relatively calm and stable this week.'.format(abs(pct))}"
+        ),
+        "Volatility_10": (
+            f"🌊 10-day price swings: {pct:.2f}%\n"
+            f"{'High volatility ({:.2f}%) — the stock has been moving a lot over 2 weeks. Signals an uncertain market.'.format(abs(pct)) if val > 0.02 else 'Low volatility ({:.2f}%) — the stock has been relatively stable over 2 weeks.'.format(abs(pct))}"
+        ),
+        "HL_Range": (
+            f"📏 Today's High-Low range: {pct:.2f}%\n"
+            f"This measures how wide the price moved today (from lowest to highest). "
+            f"{'A wide range ({:.2f}%) means investors are uncertain or reacting to news — more risk today.'.format(abs(pct)) if val > 0.02 else 'A narrow range ({:.2f}%) means calm, steady trading today.'.format(abs(pct))}"
+        ),
+        # ── Volume indicators ─────────────────────────────────────────
+        "Volume_MA5": (
+            f"📦 Average daily trading volume (5-day): {val:,.0f} shares\n"
+            f"This is how many shares are being traded per day on average. Higher volume = more investor interest."
+        ),
+        "Volume_Ratio": (
+            f"🔊 Today's volume vs recent average: {val:.2f}x\n"
+            f"{'Today {:.2f}x MORE shares were traded than usual — strong investor activity. 🔥'.format(val) if val > 1.2 else 'Today {:.2f}x FEWER shares were traded than usual — quiet market, weak conviction.'.format(val) if val < 0.8 else 'Volume is normal today ({:.2f}x average) — no unusual buying or selling pressure.'.format(val)}"
+        ),
+        "Volume_Spike": (
+            f"💥 Volume spike vs 20-day average: {val:.2f}x\n"
+            f"{'Volume is {:.2f}x the monthly average — something significant may be happening (news, earnings, etc.).'.format(val) if val > 1.5 else 'Volume is slightly above average ({:.2f}x) — mild increase in investor interest.'.format(val) if val > 1.1 else 'Volume is normal or below average ({:.2f}x) — no major unusual activity.'.format(val)}"
+        ),
+        # ── Breakout / Drawdown ───────────────────────────────────────
+        "Breakout_20": (
+            f"🏔️ How close to 20-day HIGH: {val:.3f}\n"
+            f"A value of 1.0 means the stock is at its highest price in 20 days. "
+            f"{'At {:.1f}% of its 20-day high — very close to breaking out to new highs! 🚀'.format(val*100) if val > 0.97 else 'At {:.1f}% of its 20-day high — still {:.1f}% away from a new high.'.format(val*100, (1-val)*100)}"
+        ),
+        "Drawdown_20": (
+            f"🕳️ How far from 20-day LOW: {val:.3f}\n"
+            f"A value of 1.0 means the stock is at its lowest price in 20 days. "
+            f"{'At {:.1f}x the 20-day low — the stock has recovered well from its recent bottom. ✅'.format(val) if val > 1.1 else 'Very close to the 20-day low ({:.3f}) — the stock may be under continued selling pressure. ⚠️'.format(val)}"
+        ),
+    }
 
-    else:  # HOLD
-        if feat == "MA_ratio"      and 0.99 < val < 1.01: return f"MA5/MA20 = {val:.3f} → no clear trend direction"
-        if feat == "Volatility_10" and val > 0.02:         return f"10-day volatility = {val*100:.2f}% → uncertain market"
-        if feat == "Volume_Ratio"  and 0.8 < val < 1.2:   return f"Volume ratio = {val:.2f} → no volume confirmation"
-
-    return ""
+    return explanations.get(feat, f"{feat}: {val:.4f}")
 
 # ── Predict + confidence + explanation ──────────────────────────
 def predict_ticker(ticker: str):
@@ -172,24 +241,14 @@ def predict_ticker(ticker: str):
     sig_idx    = classes.index(signal)
     confidence = round(float(proba[sig_idx]) * 100, 1)
 
-    # Top 3 explanations ranked by feature importance
+    # Top 3 features by importance — every feature always has an explanation now
     importances = model.feature_importances_
     feat_vals   = latest[FEATURE_COLS].values
-    reasons = []
-    for feat, imp, val in zip(FEATURE_COLS, importances, feat_vals):
-        expl = _explain_feature(feat, float(val), signal)
-        if expl:
-            reasons.append((feat, imp, expl))
-    reasons.sort(key=lambda x: x[1], reverse=True)
-    top_reasons = [(f, e) for f, _, e in reasons[:3]]
-
-    # Fallback: if no directional reasons matched, show top features by importance
-    if not top_reasons:
-        top_idx = np.argsort(importances)[::-1][:3]
-        top_reasons = [
-            (FEATURE_COLS[i], f"{FEATURE_EXPLAIN[FEATURE_COLS[i]]}: {feat_vals[i]:.4f}")
-            for i in top_idx
-        ]
+    top_idx     = np.argsort(importances)[::-1][:3]
+    top_reasons = [
+        (FEATURE_COLS[i], _explain_feature(FEATURE_COLS[i], float(feat_vals[i]), signal))
+        for i in top_idx
+    ]
 
     return signal, confidence, top_reasons, latest, df
 
@@ -279,23 +338,36 @@ with tab_rec:
         ])
         st.dataframe(display, use_container_width=True, hide_index=True)
 
-        # ★ NEW: Expandable signal explanations
+        # Expandable signal explanations
         st.markdown("### 📋 Signal Explanations")
         for r in valid:
             color     = SIGNAL_COLOR[r["_sig"]]
             conf      = r["_conf"]
             bar_color = "#22c55e" if conf >= 60 else "#eab308" if conf >= 40 else "#ef4444"
+            conf_text = "High confidence" if conf >= 60 else "Medium confidence" if conf >= 40 else "Low confidence — treat with caution"
             with st.expander(f"{r['Ticker']}  —  {SIGNAL_EMOJI[r['_sig']]} {SIGNAL_LABEL[r['_sig']]}  |  Confidence: {conf}%"):
+                # Confidence bar + label
                 st.markdown(
-                    f"<div style='background:#333;border-radius:8px;height:18px;width:100%'>"
-                    f"<div style='background:{bar_color};width:{conf}%;height:18px;border-radius:8px;"
-                    f"display:flex;align-items:center;padding-left:8px'>"
-                    f"<span style='color:white;font-size:12px;font-weight:bold'>{conf}%</span></div></div>",
+                    f"<div style='background:#333;border-radius:8px;height:22px;width:100%'>"
+                    f"<div style='background:{bar_color};width:{conf}%;height:22px;border-radius:8px;"
+                    f"display:flex;align-items:center;padding-left:10px'>"
+                    f"<span style='color:white;font-size:13px;font-weight:bold'>{conf}%</span></div></div>"
+                    f"<p style='color:{bar_color};margin-top:4px;font-size:13px'>⬆ {conf_text}</p>",
                     unsafe_allow_html=True,
                 )
-                st.markdown("**Top reasons for this signal:**")
+                st.markdown("**🔍 Top 3 reasons the model gave this signal:**")
                 for feat, explanation in r["_reasons"]:
-                    st.markdown(f"- **{feat}**: {explanation}")
+                    lines = explanation.split("\n")
+                    title_line = lines[0]
+                    detail_line = lines[1] if len(lines) > 1 else ""
+                    st.markdown(
+                        f"<div style='background:#1e1e1e;border-left:4px solid {color};"
+                        f"border-radius:6px;padding:10px 14px;margin:6px 0'>"
+                        f"<div style='font-weight:bold;font-size:14px'>{title_line}</div>"
+                        f"<div style='color:#aaa;font-size:13px;margin-top:4px'>{detail_line}</div>"
+                        f"</div>",
+                        unsafe_allow_html=True,
+                    )
 
 # ════════════════════════════════════════════════════════════════
 # Tab 2 — Single Stock Detail
@@ -325,22 +397,34 @@ with tab_detail:
             )
             st.markdown("")
 
-            # ★ NEW: Confidence bar
+            # Confidence bar
             bar_color = "#22c55e" if confidence >= 60 else "#eab308" if confidence >= 40 else "#ef4444"
+            conf_text = "High confidence" if confidence >= 60 else "Medium confidence" if confidence >= 40 else "Low confidence — treat with caution"
             st.markdown("**Model Confidence**")
             st.markdown(
                 f"<div style='background:#333;border-radius:8px;height:24px;width:100%'>"
                 f"<div style='background:{bar_color};width:{confidence}%;height:24px;border-radius:8px;"
                 f"display:flex;align-items:center;padding-left:10px'>"
-                f"<span style='color:white;font-weight:bold'>{confidence}%</span></div></div>",
+                f"<span style='color:white;font-weight:bold'>{confidence}%</span></div></div>"
+                f"<p style='color:{bar_color};font-size:13px;margin-top:4px'>⬆ {conf_text} — the model is {'quite sure' if confidence>=60 else 'somewhat sure' if confidence>=40 else 'not very sure'} about this signal.</p>",
                 unsafe_allow_html=True,
             )
             st.markdown("")
 
-            # ★ NEW: Explanation
-            st.markdown("**📌 Why this signal?**")
+            # Explanation cards
+            st.markdown("**📌 Why this signal? (Top 3 most important factors)**")
             for feat, explanation in top_reasons:
-                st.markdown(f"- **{feat}**: {explanation}")
+                lines = explanation.split("\n")
+                title_line  = lines[0]
+                detail_line = lines[1] if len(lines) > 1 else ""
+                st.markdown(
+                    f"<div style='background:#1e1e1e;border-left:4px solid {color};"
+                    f"border-radius:6px;padding:10px 14px;margin:6px 0'>"
+                    f"<div style='font-weight:bold;font-size:14px'>{title_line}</div>"
+                    f"<div style='color:#aaa;font-size:13px;margin-top:4px'>{detail_line}</div>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
             st.markdown("")
 
             # Key metrics
@@ -397,12 +481,23 @@ with tab_chart:
             if sig is not None:
                 color     = SIGNAL_COLOR[sig]
                 bar_color = "#22c55e" if confidence >= 60 else "#eab308" if confidence >= 40 else "#ef4444"
+                conf_text = "High confidence" if confidence >= 60 else "Medium confidence" if confidence >= 40 else "Low confidence — treat with caution"
                 st.markdown(
                     f"**Signal:** <span style='color:{color};font-size:1.2rem;font-weight:bold'>"
                     f"{SIGNAL_EMOJI[sig]} {SIGNAL_LABEL[sig]}</span> &nbsp;|&nbsp; "
-                    f"**Confidence:** <span style='color:{bar_color};font-weight:bold'>{confidence}%</span>",
+                    f"**Confidence:** <span style='color:{bar_color};font-weight:bold'>{confidence}% — {conf_text}</span>",
                     unsafe_allow_html=True,
                 )
-                st.markdown("**📌 Why this signal?**")
+                st.markdown("**📌 Why this signal? (Top 3 most important factors)**")
                 for feat, explanation in top_reasons:
-                    st.markdown(f"- **{feat}**: {explanation}")
+                    lines = explanation.split("\n")
+                    title_line  = lines[0]
+                    detail_line = lines[1] if len(lines) > 1 else ""
+                    st.markdown(
+                        f"<div style='background:#1e1e1e;border-left:4px solid {color};"
+                        f"border-radius:6px;padding:10px 14px;margin:6px 0'>"
+                        f"<div style='font-weight:bold;font-size:14px'>{title_line}</div>"
+                        f"<div style='color:#aaa;font-size:13px;margin-top:4px'>{detail_line}</div>"
+                        f"</div>",
+                        unsafe_allow_html=True,
+                    )
