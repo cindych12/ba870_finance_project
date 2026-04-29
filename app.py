@@ -16,6 +16,46 @@ st.set_page_config(
     layout="wide",
 )
 
+# ── Global CSS (light-theme friendly) ───────────────────────────
+st.markdown("""
+<style>
+.signal-card {
+    background: #f0f4ff;
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin: 8px 0;
+}
+.signal-card .card-title {
+    font-weight: 700;
+    font-size: 15px;
+    color: #1a1a1a;
+    margin-bottom: 4px;
+}
+.signal-card .card-detail {
+    font-size: 13px;
+    color: #444;
+    line-height: 1.5;
+}
+.conf-track {
+    background: #e5e7eb;
+    border-radius: 8px;
+    height: 22px;
+    width: 100%;
+    overflow: hidden;
+    margin-bottom: 4px;
+}
+.conf-fill {
+    height: 22px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    padding-left: 10px;
+}
+.conf-fill span { color: white; font-weight: 700; font-size: 13px; }
+.conf-label { font-size: 13px; margin-top: 2px; }
+</style>
+""", unsafe_allow_html=True)
+
 # ── Constants ────────────────────────────────────────────────────
 FEATURE_COLS = [
     "Return_1d", "Return_5d",
@@ -348,11 +388,9 @@ with tab_rec:
             with st.expander(f"{r['Ticker']}  —  {SIGNAL_EMOJI[r['_sig']]} {SIGNAL_LABEL[r['_sig']]}  |  Confidence: {conf}%"):
                 # Confidence bar + label
                 st.markdown(
-                    f"<div style='background:#333;border-radius:8px;height:22px;width:100%'>"
-                    f"<div style='background:{bar_color};width:{conf}%;height:22px;border-radius:8px;"
-                    f"display:flex;align-items:center;padding-left:10px'>"
-                    f"<span style='color:white;font-size:13px;font-weight:bold'>{conf}%</span></div></div>"
-                    f"<p style='color:{bar_color};margin-top:4px;font-size:13px'>⬆ {conf_text}</p>",
+                    f"<div class='conf-track'><div class='conf-fill' style='background:{bar_color};width:{conf}%'>"
+                    f"<span>{conf}%</span></div></div>"
+                    f"<p class='conf-label' style='color:{bar_color}'>⬆ {conf_text}</p>",
                     unsafe_allow_html=True,
                 )
                 st.markdown("**🔍 Top 3 reasons the model gave this signal:**")
@@ -361,10 +399,9 @@ with tab_rec:
                     title_line = lines[0]
                     detail_line = lines[1] if len(lines) > 1 else ""
                     st.markdown(
-                        f"<div style='background:#1e1e1e;border-left:4px solid {color};"
-                        f"border-radius:6px;padding:10px 14px;margin:6px 0'>"
-                        f"<div style='font-weight:bold;font-size:14px'>{title_line}</div>"
-                        f"<div style='color:#aaa;font-size:13px;margin-top:4px'>{detail_line}</div>"
+                        f"<div class='signal-card' style='border-left:4px solid {color}'>"
+                        f"<div class='card-title'>{title_line}</div>"
+                        f"<div class='card-detail'>{detail_line}</div>"
                         f"</div>",
                         unsafe_allow_html=True,
                     )
@@ -402,11 +439,9 @@ with tab_detail:
             conf_text = "High confidence" if confidence >= 60 else "Medium confidence" if confidence >= 40 else "Low confidence — treat with caution"
             st.markdown("**Model Confidence**")
             st.markdown(
-                f"<div style='background:#333;border-radius:8px;height:24px;width:100%'>"
-                f"<div style='background:{bar_color};width:{confidence}%;height:24px;border-radius:8px;"
-                f"display:flex;align-items:center;padding-left:10px'>"
-                f"<span style='color:white;font-weight:bold'>{confidence}%</span></div></div>"
-                f"<p style='color:{bar_color};font-size:13px;margin-top:4px'>⬆ {conf_text} — the model is {'quite sure' if confidence>=60 else 'somewhat sure' if confidence>=40 else 'not very sure'} about this signal.</p>",
+                f"<div class='conf-track'><div class='conf-fill' style='background:{bar_color};width:{confidence}%'>"
+                f"<span>{confidence}%</span></div></div>"
+                f"<p class='conf-label' style='color:{bar_color}'>⬆ {conf_text} — the model is {'quite sure' if confidence>=60 else 'somewhat sure' if confidence>=40 else 'not very sure'} about this signal.</p>",
                 unsafe_allow_html=True,
             )
             st.markdown("")
@@ -418,10 +453,9 @@ with tab_detail:
                 title_line  = lines[0]
                 detail_line = lines[1] if len(lines) > 1 else ""
                 st.markdown(
-                    f"<div style='background:#1e1e1e;border-left:4px solid {color};"
-                    f"border-radius:6px;padding:10px 14px;margin:6px 0'>"
-                    f"<div style='font-weight:bold;font-size:14px'>{title_line}</div>"
-                    f"<div style='color:#aaa;font-size:13px;margin-top:4px'>{detail_line}</div>"
+                    f"<div class='signal-card' style='border-left:4px solid {color}'>"
+                    f"<div class='card-title'>{title_line}</div>"
+                    f"<div class='card-detail'>{detail_line}</div>"
                     f"</div>",
                     unsafe_allow_html=True,
                 )
@@ -494,10 +528,9 @@ with tab_chart:
                     title_line  = lines[0]
                     detail_line = lines[1] if len(lines) > 1 else ""
                     st.markdown(
-                        f"<div style='background:#1e1e1e;border-left:4px solid {color};"
-                        f"border-radius:6px;padding:10px 14px;margin:6px 0'>"
-                        f"<div style='font-weight:bold;font-size:14px'>{title_line}</div>"
-                        f"<div style='color:#aaa;font-size:13px;margin-top:4px'>{detail_line}</div>"
+                        f"<div class='signal-card' style='border-left:4px solid {color}'>"
+                        f"<div class='card-title'>{title_line}</div>"
+                        f"<div class='card-detail'>{detail_line}</div>"
                         f"</div>",
                         unsafe_allow_html=True,
                     )
